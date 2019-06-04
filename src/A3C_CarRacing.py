@@ -1,5 +1,6 @@
 import tensorflow as tf
 import numpy as np
+import Helper_Lib as helper
 
 import gym, time, random, threading
 
@@ -13,12 +14,12 @@ from keras import backend as Keras
 
 #CartPole-v0
 #CarRacing-v0
-ENV = "CartPole-v0"
+ENV = "CarRacing-v0"
 
 RUN_TIME = 30
 # THREADS = 8
-THREADS = 8
-OPTIMIZERS = 2
+THREADS = 1
+OPTIMIZERS = 1
 THREAD_DELAY = 0.001 # thread delay is needed to enable more parallel threads than cpu cores
 
 #discount rate
@@ -27,11 +28,16 @@ GAMMA = 0.99
 N_STEP_RETURN = 8
 GAMMA_N = GAMMA ** N_STEP_RETURN
 
-DISCRETIZATION_RATIO = 10
+DISCRETIZATION_RATIO = 3
 
 EPS_START = 0.4
 EPS_STOP = .15
 EPS_STEPS = 75000
+
+IMAGE_WIDTH = 96
+IMAGE_HEIGHT = 96
+IMAGE_STACK = 4
+IMAGE_SIZE = (IMAGE_WIDTH, IMAGE_HEIGHT, IMAGE_STACK)
 
 MIN_BATCH = 32
 LEARNING_RATE = 5e-3
@@ -56,13 +62,16 @@ class Environment(threading.Thread):
         self.env = gym.make(ENV)
         self.agent = Agent(eps_start, eps_end, eps_steps)
 
-        self.disc_action_space = 0
         if isinstance(self.env.action_space, gym.spaces.Discrete): 
             print("Discrete Actionspace, size: {}".format(self.env.action_space.n))
             self.disc_action_space = self.env.action_space.n
+            self.actions = [0,1]
+            
+        # hardcoded for Box(3,) in CarRacing-v0
         elif isinstance(self.env.action_space, gym.spaces.Box): 
             print("Box Actionspace, size: {}, ".format(self.env.action_space.shape[0]))
-            self.disc_action_space = self.env.action_space.shape[0]*2*DISCRETIZATION_RATIO
+            self.disc_action_space = 4
+            self.actions = [[0,1,0],[0,0,0.8],[-1,0,0],[1,0,0]]
     """
     executes runEpisode as long as no sigint is received
     """    
@@ -74,9 +83,17 @@ class Environment(threading.Thread):
         self.stop_signal = True
     
     def runEpisode(self):
-        s = self.env.reset()
         
+        #### load and preprocess image ####
+        img = self.env.reset()
+        img =  helper.rgb2gray(img, True)
+        s = np.zeros(IMAGE_SIZE)
+        for i in range(IMAGE_STACK):
+            s[:,:,i] = img
+
+
         R = 0
+        s_=s
         
         while True:
             time.sleep(THREAD_DELAY) #yield delay for safety
@@ -84,9 +101,16 @@ class Environment(threading.Thread):
             if self.render: self.env.render()
 
             a = self.agent.act(s)  #action based on current state
-            s_, r, done, info = self.env.step(a) #retrieve the next state and reward for the corresponding action
+            img_rgb, r, done, info = self.env.step(self.actions[a]) #retrieve the next state and reward for the corresponding action
             
-            if done:    #last step of episode is finished, no next state
+            
+            if not done:
+                img =  helper.rgb2gray(img_rgb, True)
+                for i in range(IMAGE_STACK-1):
+                    s_[:,:,i] = s_[:,:,i+1]
+                s_[:,:,IMAGE_STACK-1] = img
+            
+            else:    #last step of episode is finished, no next state
                 s_ = None
             
             self.agent.train(s, a, r, s_) #let agent train with the information from step
@@ -100,22 +124,10 @@ class Environment(threading.Thread):
             
         print ("Total R: {}".format(R))
 
+            
+        
 
-    """
-    returns the action space, wrapped around gym env to discretisize any continous action spaces based
-    on previously set discretization steps
-    """
-    #def action_space(self):
-     #   if isinstance(self.env.action_space, gym.spaces.Discrete): 
-      #      print("Discrete Actionspace, size: {}".format(self.env.action_space.n))
-       #     return self.env.action_space.n
-        #elif isinstance(self.env.action_space, gym.spaces.Box): 
-         #   print("Box Actionspace, size: {}, ".format(self.env.action_space.shape[0]))
-          #  return self.env.action_space.shape[0]*2*DISCRETIZATION_RATIO
-        #else: print("Actionspace NaN")
-    
-
-    """
+"""
 The Master Network delivers the policy and value function as output of the
 neural network it contains
 """
@@ -139,8 +151,15 @@ class MasterNetwork:
         self.default_graph.finalize()  #avoid modifications
     
     def _build_model(self):
-        l_input = Input( batch_shape = (None, NUM_STATE))
-        l_dense = Dense(16, activation='relu')(l_input)
+        l_input = Input(shape = IMAGE_SIZE)
+        x = l_input
+        x = Convolution2D(16, (16,16), strides=(2,2), activation='relu')(x)
+        x = Convolution2D(32, (8,8), strides=(2,2), activation='relu')(x)
+        x = Flatten()(x)
+        x = Dense (256, activation='relu')(x)
+        l_dense = Dense (16, activation='relu')(x)
+        
+        #l_dense = Dense(16, activation='relu')(l_input)
         
         #actions need to have a correct probability distribution, hence the softmax activation
         out_actions = Dense(NUM_ACTIONS, activation='softmax')(l_dense)
@@ -165,7 +184,7 @@ class MasterNetwork:
         # 2D array placeholders that hold a whole batch later when called in minimize()
         # first dimension is unlimited and represents training batches
         # second dimension is number of variables
-        s_t = tf.placeholder(tf.float32, shape=(None, NUM_STATE))
+        s_t = tf.placeholder(tf.float32, shape=(None, IMAGE_SIZE[0], IMAGE_SIZE[1], IMAGE_SIZE[2]))
         a_t = tf.placeholder(tf.float32, shape=(None, NUM_ACTIONS))
         r_t = tf.placeholder(tf.float32, shape=(None, 1))  #discounted n-step reward
         
