@@ -7,10 +7,16 @@ from keras.models import *
 from keras.layers import *
 from keras import backend as Keras
 
-#Constants and Parameters
+##########################
+#Constants and Parameters#
+##########################
+
+#CartPole-v0
+#CarRacing-v0
 ENV = "CartPole-v0"
 
 RUN_TIME = 30
+# THREADS = 8
 THREADS = 8
 OPTIMIZERS = 2
 THREAD_DELAY = 0.001 # thread delay is needed to enable more parallel threads than cpu cores
@@ -20,6 +26,8 @@ GAMMA = 0.99
 
 N_STEP_RETURN = 8
 GAMMA_N = GAMMA ** N_STEP_RETURN
+
+DISCRETIZATION_RATIO = 10
 
 EPS_START = 0.4
 EPS_STOP = .15
@@ -31,6 +39,8 @@ LEARNING_RATE = 5e-3
 # these values are basically weights in the overall sum of losses
 LOSS_V = .5             # v loss coefficient
 LOSS_ENTROPY = .01      # entropy coefficient  
+
+############################
 
 """
 The Environment runs the number of predefined episodes in a loop
@@ -45,6 +55,14 @@ class Environment(threading.Thread):
         self.render = render
         self.env = gym.make(ENV)
         self.agent = Agent(eps_start, eps_end, eps_steps)
+
+        self.disc_action_space = 0
+        if isinstance(self.env.action_space, gym.spaces.Discrete): 
+            print("Discrete Actionspace, size: {}".format(self.env.action_space.n))
+            self.disc_action_space = self.env.action_space.n
+        elif isinstance(self.env.action_space, gym.spaces.Box): 
+            print("Box Actionspace, size: {}, ".format(self.env.action_space.shape[0]))
+            self.disc_action_space = self.env.action_space.shape[0]*2*DISCRETIZATION_RATIO
     """
     executes runEpisode as long as no sigint is received
     """    
@@ -81,6 +99,20 @@ class Environment(threading.Thread):
                 break
             
         print ("Total R: {}".format(R))
+
+
+    """
+    returns the action space, wrapped around gym env to discretisize any continous action spaces based
+    on previously set discretization steps
+    """
+    #def action_space(self):
+     #   if isinstance(self.env.action_space, gym.spaces.Discrete): 
+      #      print("Discrete Actionspace, size: {}".format(self.env.action_space.n))
+       #     return self.env.action_space.n
+        #elif isinstance(self.env.action_space, gym.spaces.Box): 
+         #   print("Box Actionspace, size: {}, ".format(self.env.action_space.shape[0]))
+          #  return self.env.action_space.shape[0]*2*DISCRETIZATION_RATIO
+        #else: print("Actionspace NaN")
     
 
     """
@@ -361,7 +393,12 @@ class Agent:
     # main
 env_test = Environment(render=True, eps_start=0., eps_end=0.)
 NUM_STATE = env_test.env.observation_space.shape[0]
-NUM_ACTIONS = env_test.env.action_space.n
+
+# check action space
+print ("Env: {}, Action Space: ".format(ENV))
+#env_test.disc_action_space()
+#print(env_test.env.action_space.low)
+NUM_ACTIONS = env_test.disc_action_space
 NONE_STATE = np.zeros(NUM_STATE)
 
 #create networks and threads
