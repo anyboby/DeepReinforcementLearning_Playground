@@ -1,4 +1,8 @@
 import tensorflow as tf
+from tensorflow.compat.v1 import ConfigProto
+from tensorflow.compat.v1 import InteractiveSession
+
+
 import numpy as np
 import Helper_Lib as helper
 
@@ -8,6 +12,8 @@ from keras.models import *
 from keras.layers import *
 from keras import backend as Keras
 
+
+
 ##########################
 #Constants and Parameters#
 ##########################
@@ -16,7 +22,7 @@ from keras import backend as Keras
 #CarRacing-v0
 ENV = "CarRacing-v0"
 
-RUN_TIME = 30
+RUN_TIME = 100
 # THREADS = 8
 THREADS = 1
 OPTIMIZERS = 1
@@ -107,8 +113,8 @@ class Environment(threading.Thread):
             if not done:
                 img =  helper.rgb2gray(img_rgb, True)
                 for i in range(IMAGE_STACK-1):
-                    s_[:,:,i] = s_[:,:,i+1]
-                s_[:,:,IMAGE_STACK-1] = img
+                    s_[:,:,i] = s_[:,:,i+1]  # update stacked layers with the older stacked layers from previous step 
+                s_[:,:,IMAGE_STACK-1] = img  # update newest picture on top of stack
             
             else:    #last step of episode is finished, no next state
                 s_ = None
@@ -137,7 +143,13 @@ class MasterNetwork:
     lock_queue = threading.Lock()
     
     def __init__(self):
-        self.session = tf.Session()
+
+        ## these lines are from stackoverflow to avoid gpu memory overusage error (https://github.com/tensorflow/tensorflow/issues/24828)
+        config = ConfigProto()
+        config.gpu_options.allow_growth = True
+        session = InteractiveSession(config=config)
+        self.session = InteractiveSession(config=config)
+        #self.session = tf.Session()
         Keras.set_session(self.session)
         Keras.manual_variable_initialization(True)
         
@@ -151,19 +163,28 @@ class MasterNetwork:
         self.default_graph.finalize()  #avoid modifications
     
     def _build_model(self):
-        l_input = Input(shape = IMAGE_SIZE)
+        l_input = Input(shape = IMAGE_SIZE)   # input layer, shape:(?,96,96,4)
         x = l_input
-        x = Convolution2D(16, (16,16), strides=(2,2), activation='relu')(x)
-        x = Convolution2D(32, (8,8), strides=(2,2), activation='relu')(x)
-        x = Flatten()(x)
-        x = Dense (256, activation='relu')(x)
-        l_dense = Dense (16, activation='relu')(x)
+        x = Convolution2D(16, (16,16), strides=(2,2), activation='relu')(x)  # conv layer 1, kernel shape: (16,16, 4, 16)
+                                                                                           # output shape: (?, 41,41,16) 
+        x = Convolution2D(32, (8,8), strides=(2,2), activation='relu')(x)    # conv layer 2, kernel shape: (16,16, 4, 16)
+                                                                                           # output shape: (?, 17,17,32) 
+        x = Flatten()(x)                      # flatten layer, shape: (?, 9248)
+        x = Dense (256, activation='relu')(x) # dense layer, kernel shape: (9248, 256)
+                                                           # output shape: (?, 256)
+        l_dense = Dense (16, activation='relu')(x) # dense layer 2, kernel shape: (256, 16)
+                                                                #   output shape: (?, 16)
         
         #l_dense = Dense(16, activation='relu')(l_input)
         
         #actions need to have a correct probability distribution, hence the softmax activation
-        out_actions = Dense(NUM_ACTIONS, activation='softmax')(l_dense)
-        out_values = Dense(1, activation='linear')(l_dense)
+        out_actions = Dense(NUM_ACTIONS, activation='softmax')(l_dense)  #output dense layer for actions: 
+                                                                            # kernel shape: (16,NUM_ACTIONS = 4 as of now)
+                                                                            # outputshape: (?, 4)
+
+        out_values = Dense(1, activation='linear')(l_dense)              #output dense layer for values: 
+                                                                            # kernel shape: (16,1)
+                                                                            # outputshape: (?, 1)
         
         model = Model(inputs = [l_input], outputs=[out_actions, out_values])
         model._make_predict_function() #have to initialize before threading
@@ -198,7 +219,7 @@ class MasterNetwork:
         # exact probability of taking the action a (a-th index in p) given state s
         # the small constant added is to prevent NaN errors, if a probability was zero 
         # (possible through eps-greedy)
-        log_prob = tf.log(tf.reduce_sum(p* a_t, axis=1, keep_dims = True) + 1e-10)
+        log_prob = tf.log(tf.reduce_sum(p* a_t, axis=1, keepdims = True) + 1e-10)
         
         # advantage for n-step reward, r_t holds the n-stepo return reward and approximates the 
         # action-state function Q(s,a) 
@@ -214,7 +235,7 @@ class MasterNetwork:
         loss_value = LOSS_V * tf.square(advantage) 
                 
         # maximize (@MO: minimize ?) entropy
-        entropy = LOSS_ENTROPY * tf.reduce_sum(p * tf.log(p+1e-10), axis=1, keep_dims = True)  
+        entropy = LOSS_ENTROPY * tf.reduce_sum(p * tf.log(p+1e-10), axis=1, keepdims = True)  
         
         # The previously skipped average-over-sum's in one step now
         loss_total = tf.reduce_mean(loss_policy + loss_value + entropy)
@@ -249,11 +270,14 @@ class MasterNetwork:
             self.train_queue = [ [], [], [], [], []]
             
         # transform into blocks of numpy arrays
-        s = np.vstack(s)
-        a = np.vstack(a)
-        r = np.vstack(r)
-        s_ = np.vstack(s_)
-        s_mask = np.vstack(s_mask)
+        #s = np.vstack(s)  # new shape of s: (3072, 96, 4) (shouldnt it be 32, 69, 96, 4 ?
+        print(np.concatenate(s, axis=0))
+        s = np.concatenate(s, axis=0)
+        a = np.vstack(a)  # new shape of a: (32,4)
+        r = np.vstack(r)  # new shape of r: (32,1)
+        #s_ = np.vstack(s_) # new shape of s_: (3072, 96, 4) (same as above)
+        s_ = np.concatenate(s_, axis=0)
+        s_mask = np.vstack(s_mask) # new shape of s_mask: (32,1)
         
 
         if len(s) > 5*MIN_BATCH:
@@ -380,7 +404,7 @@ class Agent:
             return s, a, self.R, s_
             
         a_vec = np.zeros(NUM_ACTIONS)
-        a_vec[a] = 1          #later needed, to access chosen action by easy multiplication
+        a_vec[a] = 1          #later needed, to access chosen action by easy multiplication  (maybe a-1 ?)
                               #Tensorflow does not allow indexed inputs
         
         self.memory.append ((s, a_vec, r, s_))
