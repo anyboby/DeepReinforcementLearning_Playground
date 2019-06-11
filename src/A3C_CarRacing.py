@@ -271,12 +271,15 @@ class MasterNetwork:
             
         # transform into blocks of numpy arrays
         #s = np.vstack(s)  # new shape of s: (3072, 96, 4) (shouldnt it be 32, 69, 96, 4 ?
-        print(np.concatenate(s, axis=0))
-        s = np.concatenate(s, axis=0)
+        print("shape of s[0] : {}".format(s[0].shape))
+        print("shape of np.array(s) : {}".format(np.array(s).shape))
+        s = np.array(s)
         a = np.vstack(a)  # new shape of a: (32,4)
         r = np.vstack(r)  # new shape of r: (32,1)
         #s_ = np.vstack(s_) # new shape of s_: (3072, 96, 4) (same as above)
-        s_ = np.concatenate(s_, axis=0)
+        print("shape of s_[0] : {}".format(s_[0].shape))
+        print("shape of np.array(s_) : {}".format(np.array(s_).shape))
+        s_ = np.array(s_)
         s_mask = np.vstack(s_mask) # new shape of s_mask: (32,1)
         
 
