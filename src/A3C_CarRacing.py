@@ -24,7 +24,7 @@ ENV = "CarRacing-v0"
 
 RUN_TIME = 100
 # THREADS = 8
-THREADS = 1
+THREADS = 2
 OPTIMIZERS = 1
 THREAD_DELAY = 0.001 # thread delay is needed to enable more parallel threads than cpu cores
 
@@ -67,17 +67,25 @@ class Environment(threading.Thread):
         self.render = render
         self.env = gym.make(ENV)
         self.agent = Agent(eps_start, eps_end, eps_steps)
+        self.disc_action_space = 4  
+        self.actions = [[0,1,0],[0,0,0.8],[-1,0,0],[1,0,0]]
+        self.OWN_IMAGE_SIZE = IMAGE_SIZE
+        self.OWN_IMAGE_STACK = IMAGE_STACK
 
+        """ disabled for multithreading testing
         if isinstance(self.env.action_space, gym.spaces.Discrete): 
             print("Discrete Actionspace, size: {}".format(self.env.action_space.n))
             self.disc_action_space = self.env.action_space.n
             self.actions = [0,1]
-            
+        """         
         # hardcoded for Box(3,) in CarRacing-v0
+        """ disabled for multithreading testing
         elif isinstance(self.env.action_space, gym.spaces.Box): 
             print("Box Actionspace, size: {}, ".format(self.env.action_space.shape[0]))
-            self.disc_action_space = 4
+            self.disc_action_space = 4  
             self.actions = [[0,1,0],[0,0,0.8],[-1,0,0],[1,0,0]]
+        """
+        
     """
     executes runEpisode as long as no sigint is received
     """    
@@ -92,11 +100,10 @@ class Environment(threading.Thread):
         
         #### load and preprocess image ####
         img = self.env.reset()
-        img =  helper.rgb2gray(img, True)
-        s = np.zeros(IMAGE_SIZE)
-        for i in range(IMAGE_STACK):
+        img =  self.rgb2gray(img, True)
+        s = np.zeros(self.OWN_IMAGE_SIZE)
+        for i in range(self.OWN_IMAGE_STACK):    
             s[:,:,i] = img
-
 
         R = 0
         s_=s
@@ -109,18 +116,15 @@ class Environment(threading.Thread):
             a = self.agent.act(s)  #action based on current state
             img_rgb, r, done, info = self.env.step(self.actions[a]) #retrieve the next state and reward for the corresponding action
             
-            
             if not done:
-                img =  helper.rgb2gray(img_rgb, True)
-                for i in range(IMAGE_STACK-1):
+                img =  self.rgb2gray(img_rgb, True)
+                for i in range(self.OWN_IMAGE_STACK-1):
                     s_[:,:,i] = s_[:,:,i+1]  # update stacked layers with the older stacked layers from previous step 
-                s_[:,:,IMAGE_STACK-1] = img  # update newest picture on top of stack
-            
+                s_[:,:,self.OWN_IMAGE_STACK-1] = img  # update newest picture on top of stack
             else:    #last step of episode is finished, no next state
                 s_ = None
             
             self.agent.train(s, a, r, s_) #let agent train with the information from step
-
     
             s = s_  #assume new state
             R += r  #add reward for the last step to total Rewards
@@ -129,6 +133,16 @@ class Environment(threading.Thread):
                 break
             
         print ("Total R: {}".format(R))
+
+    def rgb2gray(self, rgb, norm):
+   
+        gray = np.dot(rgb[...,:3], [0.299, 0.587, 0.114])
+        
+        if norm:
+            # normalize
+            gray = gray.astype('float32') / 128 - 1 
+
+        return gray 
 
             
         
@@ -270,15 +284,14 @@ class MasterNetwork:
             self.train_queue = [ [], [], [], [], []]
             
         # transform into blocks of numpy arrays
-        #s = np.vstack(s)  # new shape of s: (3072, 96, 4) (shouldnt it be 32, 69, 96, 4 ?
-        print("shape of s[0] : {}".format(s[0].shape))
-        print("shape of np.array(s) : {}".format(np.array(s).shape))
-        s = np.array(s)
+        #print("shape of s[0] : {}".format(s[0].shape))
+        #print("shape of np.array(s) : {}".format(np.array(s).shape))
+        s = np.array(s)   # new shape of a: (32,96,96,4)
         a = np.vstack(a)  # new shape of a: (32,4)
         r = np.vstack(r)  # new shape of r: (32,1)
-        #s_ = np.vstack(s_) # new shape of s_: (3072, 96, 4) (same as above)
-        print("shape of s_[0] : {}".format(s_[0].shape))
-        print("shape of np.array(s_) : {}".format(np.array(s_).shape))
+        #s_ = np.vstack(s_) # new shape of s_: (32,96,96,4)
+        #print("shape of s_[0] : {}".format(s_[0].shape))
+        #print("shape of np.array(s_) : {}".format(np.array(s_).shape))
         s_ = np.array(s_)
         s_mask = np.vstack(s_mask) # new shape of s_mask: (32,1)
         
@@ -418,6 +431,10 @@ class Agent:
             while len(self.memory) > 0:
                 n = len(self.memory)
                 s, a, r, s_ = get_sample(self.memory, n)
+                # if n<3:
+                #    print("n is 0, s has the shape: {}".format(s))
+                #    print("n is 0, s_ has the shape: {}".format(s_))
+
                 masterNetwork.train_push(s, a, r, s_)
                 
                 #@MO DIEHIER NOCH CHECKEN
@@ -437,15 +454,19 @@ class Agent:
 
 
     # main
-env_test = Environment(render=True, eps_start=0., eps_end=0.)
-NUM_STATE = env_test.env.observation_space.shape[0]
+env_test = Environment(render=False, eps_start=0., eps_end=0.)
+STATE_SHAPE = env_test.env.observation_space.shape
 
 # check action space
 print ("Env: {}, Action Space: ".format(ENV))
 #env_test.disc_action_space()
 #print(env_test.env.action_space.low)
+
+
 NUM_ACTIONS = env_test.disc_action_space
-NONE_STATE = np.zeros(NUM_STATE)
+#NONE_STATE = np.zeros((MIN_BATCH, IMAGE_SIZE[0], IMAGE_SIZE[1], IMAGE_SIZE[2])) #create Nullstate to append when s_ is None
+NONE_STATE = np.zeros(IMAGE_SIZE) #create Nullstate to append when s_ is None
+print("NONE_STATE shape: {}".format(NONE_STATE.shape))
 
 #create networks and threads
 masterNetwork = MasterNetwork()
