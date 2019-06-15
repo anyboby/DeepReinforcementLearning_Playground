@@ -17,10 +17,12 @@ class MasterNetwork:
     
     train_queue = [[],[],[],[],[]]  #s, a, r, s', s' terminal mask
     lock_queue = threading.Lock()
-    
-    def __init__(self):
+    lock_model = threading.Lock()
+
+    def __init__(self, replay_mode = False):
 
         ## these lines are based on stackoverflow to avoid gpu memory overusage error (https://github.com/tensorflow/tensorflow/issues/24828)
+        self.replay_mode = replay_mode
         gpu_options = tf.GPUOptions(allow_growth=True)
         config = tf.compat.v1.ConfigProto(gpu_options=gpu_options)
         self.session = tf.Session(config=config)
@@ -28,26 +30,28 @@ class MasterNetwork:
         Keras.manual_variable_initialization(True)
         
         #build model first
-        self.model = self._build_model()
+        if not replay_mode: self.model = self._build_model()
+        else:  self.model = load_model(Constants.SAVE_PATH) #+ "_jackpot" oder + "_<frameNumer>"
+
         self.graph = self._build_graph(self.model)
     
         self.session.run (tf.global_variables_initializer())
         self.default_graph = tf.get_default_graph()
         
-        self.default_graph.finalize()  #avoid modifications
+        if not replay_mode: self.default_graph.finalize()  #avoid modifications
     
     def _build_model(self):
         l_input = Input(shape = Constants.IMAGE_SIZE)   # input layer, shape:(?,96,96,4)
         x = l_input
-        x = Convolution2D(16, (16,16), strides=(2,2), activation='relu')(x)  # conv layer 1, kernel shape: (16,16, 4, 16)
-                                                                                           # output shape: (?, 41,41,16) 
-        x = Convolution2D(32, (8,8), strides=(2,2), activation='relu')(x)    # conv layer 2, kernel shape: (16,16, 4, 16)
-                                                                                           # output shape: (?, 17,17,32) 
-        x = Flatten()(x)                      # flatten layer, shape: (?, 9248)
-        x = Dense (256, activation='relu')(x) # dense layer, kernel shape: (9248, 256)
-                                                           # output shape: (?, 256)
-        l_dense = Dense (16, activation='relu')(x) # dense layer 2, kernel shape: (256, 16)
-                                                                #   output shape: (?, 16)
+        x = Convolution2D(16, (8,8), strides=(4,4), activation='relu')(x)               
+                                                                                           
+        x = Convolution2D(32, (3,3), strides=(2,2), activation='relu')(x)      
+                                                                                           
+        x = Flatten()(x)                      
+        x = Dense (256, activation='relu')(x) 
+                                        
+        l_dense = Dense (16, activation='relu')(x)
+                                                      
         
         #l_dense = Dense(16, activation='relu')(l_input)
         
@@ -108,16 +112,22 @@ class MasterNetwork:
         
         # since Q(s,a) is approximated by n-step return reward r_t, the value error equals
         # the advantage function now!
-        loss_value = Constants.LOSS_V * tf.square(advantage) 
-                
+        #loss_value = Constants.LOSS_V * tf.square(advantage) 
+        loss_value = Constants.LOSS_V * tf.nn.l2_loss(advantage)
+        
         # maximize (@MO: minimize ?) entropy
+        # It’s useful to know that entropy for fully deterministic policy (e.g. [1, 0, 0, 0] 
+        # for four actions) is 0 and it is maximized for totally uniform policy 
+        # (e.g. [0.25, 0.25, 0.25, 0.25]).
         entropy = Constants.LOSS_ENTROPY * tf.reduce_sum(p * tf.log(p+1e-10), axis=1, keepdims = True)  
         
         # The previously skipped average-over-sum's in one step now
         loss_total = tf.reduce_mean(loss_policy + loss_value + entropy)
         
         #@MO: what does RMSProp Optimizer do ? it allows manual learning rates but otherwise ?
-        optimizer = tf.train.RMSPropOptimizer(Constants.LEARNING_RATE, decay=.99)
+        optimizer = tf.train.RMSPropOptimizer(Constants.LEARNING_RATE,
+                                                 epsilon=Constants.RMSP.EPSILON,
+                                                 decay=Constants.RMSP.ALPHA)
         minimize = optimizer.minimize(loss_total)
         
         return s_t, a_t, r_t, minimize
@@ -168,6 +178,7 @@ class MasterNetwork:
 
         # retrieve placeholders
         s_t, a_t, r_t, minimize = self.graph
+        #print("Learning them weightz")
         self.session.run(minimize, feed_dict={s_t: s, a_t:a, r_t:r})
         
         
@@ -204,4 +215,15 @@ class MasterNetwork:
         with self.default_graph.as_default():
             p,v = self.model.predict(s)
             return v      
+
+    def save_weights(self, path):
+        with self.lock_model:
+            print("saving...")
+            self.model.save(path)
+
+
+    def load_weights(self):
+        with self.lock_model:
+            print("saving...")
+            self.model = load_model(Constants.SAVE_PATH)
 

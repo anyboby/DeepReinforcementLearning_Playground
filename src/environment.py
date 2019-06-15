@@ -13,7 +13,6 @@ class Environment(threading.Thread):
 
     def __init__(self, env, agent, render=False, eps_start=Constants.EPS_START, eps_end = Constants.EPS_STOP, eps_steps = Constants.EPS_STEPS):
         threading.Thread.__init__(self)
-
         self.render = render
         self.env = env
         self.agent = agent
@@ -49,17 +48,12 @@ class Environment(threading.Thread):
     def runEpisode(self):
         
         #### load and preprocess image ####
-        print("test")
         #print(id(self.env))
-        print(id(self.env.reset))
 
-        with self.env_lock: 
+        with self.env_lock:
             img = self.env.reset()
-        print("test2")
         img =  self.rgb2gray(img, True)
-        print("test3")
         s = np.zeros(self.OWN_IMAGE_SIZE)
-        print("test4")
         for i in range(self.OWN_IMAGE_STACK):    
             s[:,:,i] = img
 
@@ -70,10 +64,14 @@ class Environment(threading.Thread):
             time.sleep(Constants.THREAD_DELAY) #yield delay for safety
             
             if self.render: self.env.render()
-
             a = self.agent.act(s)  #action based on current state
-            img_rgb, r, done, info = self.env.step(self.actions[a]) #retrieve the next state and reward for the corresponding action
-            
+            with self.env_lock:
+                img_rgb, r, done, info = self.env.step(self.actions[a]) #retrieve the next state and reward for the corresponding action
+
+                ####### Experimental: chagne rewards #####
+                #if r>0: r=4*r
+                #print (info)
+
             if not done:
                 img =  self.rgb2gray(img_rgb, True)
                 for i in range(self.OWN_IMAGE_STACK-1):
@@ -81,16 +79,25 @@ class Environment(threading.Thread):
                 s_[:,:,self.OWN_IMAGE_STACK-1] = img  # update newest picture on top of stack
             else:    #last step of episode is finished, no next state
                 s_ = None
-            
-            self.agent.train(s, a, r, s_) #let agent train with the information from step
-    
+
+            #let agent put data in memory and possibly trigger optimization
+            self.agent.train(s, a, r, s_) 
+
             s = s_  #assume new state
             R += r  #add reward for the last step to total Rewards
-        
+
             if done or self.stop_signal:
                 break
-            
+        print ("_________________________")
+        print ("{} finished an episode".format(threading.currentThread().getName()))
         print ("Total R: {}".format(R))
+        ######save model if Episode reward is high enough####
+        if (R>Constants.MIN_SAVE_REWARD): 
+            print ("JACKPOT: SAVING WEIGHTS")
+            self.agent.save_model_weights(path = Constants.SAVE_PATH + "_jackpot")
+        print ("_________________________")
+
+
 
     def rgb2gray(self, rgb, norm):
    

@@ -37,10 +37,13 @@ class Agent:
         epsilon = self.getEpsilon()
         #global frames; frames = frames + 1
         Agent.frames = Agent.frames + 1
+        
+        #save model
+        if Agent.frames%Constants.SAVE_FRAMES==0: self.save_model_weights(path = Constants.SAVE_PATH + "_e" + str(Agent.frames)[:-3])
 
         if random.random() < epsilon:
             a = random.randint(0, self.num_actions-1)
-            if Agent.frames%100==0: print("acting randomly: {}, frame nr: {}, eps: {}".format(a, Agent.frames, epsilon))            
+            #if Agent.frames%100==0: print("acting randomly: {}, frame nr: {}, eps: {}".format(a, Agent.frames, epsilon))            
             return a
 
         
@@ -49,7 +52,7 @@ class Agent:
             p = self.master_network.predict_p(s)[0]
             #a = np.argmax(p)
             a = np.random.choice(self.num_actions, p=p)
-            if Agent.frames%100==0: print("acting from policy: {}, frame nr: {}, eps: {}".format(a, Agent.frames, epsilon))            
+            #if Agent.frames%100==0: print("acting from policy: {}, frame nr: {}, eps: {}".format(a, Agent.frames, epsilon))            
 
             return a
         
@@ -103,6 +106,20 @@ class Agent:
             self.R = self.R - self.memory[0][2]
             self.memory.pop(0)
     
+    def save_model_weights(self, path):
+        self.master_network.save_weights(path)
+    
+    #def _record_score(self, sess, summary_writer, summary_op, score_input, score, global_t, pi):
+    #summary_str = sess.run(summary_op, feed_dict={ score_input: score })
+    #summary_writer.add_summary(summary_str, global_t)
+    #summary_writer.flush()
+
+    #if self.threadIndex == 0:
+    #  print '****** ADDING NEW SCORE ******'
+    #  self.saveData.append(score, pi)
+    #  if score > Constants.SAVE_SCORE_THRESHOLD:
+    #    self.saveData.requestSave()
+
 
 	# possible edge case - if an episode ends in <N steps, the computation is incorrect
 
