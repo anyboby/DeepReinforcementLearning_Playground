@@ -31,7 +31,8 @@ class MasterNetwork:
         
         #build model first
         if not replay_mode: self.model = self._build_model()
-        else:  self.model = load_model(Constants.SAVE_PATH) #+ "_jackpot" oder + "_<frameNumer>"
+        else:  self.model = load_model(Constants.LOAD_PATH) #+ "_jackpot" oder + "_<frameNumer>"
+
 
         self.graph = self._build_graph(self.model)
     
@@ -114,7 +115,7 @@ class MasterNetwork:
         # the advantage function now!
         #loss_value = Constants.LOSS_V * tf.square(advantage) 
         loss_value = Constants.LOSS_V * tf.nn.l2_loss(advantage)
-        
+
         # maximize (@MO: minimize ?) entropy
         # It’s useful to know that entropy for fully deterministic policy (e.g. [1, 0, 0, 0] 
         # for four actions) is 0 and it is maximized for totally uniform policy 
@@ -225,5 +226,5 @@ class MasterNetwork:
     def load_weights(self):
         with self.lock_model:
             print("saving...")
-            self.model = load_model(Constants.SAVE_PATH)
+            self.model = load_model(Constants.SAVE_MODEL)
 

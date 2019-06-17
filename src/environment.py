@@ -1,5 +1,6 @@
 import numpy as np
 
+from gym import wrappers
 import gym, threading, time
 import constants as Constants
 
@@ -10,6 +11,8 @@ Based on a gym environment containing an instance of the agent
 class Environment(threading.Thread):
     stop_signal = False
     env_lock = threading.Lock()
+    #### TODO: Gescheiten frame und episodecounter für saving erstellen
+    global_episodes = 0
 
     def __init__(self, env, agent, render=False, eps_start=Constants.EPS_START, eps_end = Constants.EPS_STOP, eps_steps = Constants.EPS_STEPS):
         threading.Thread.__init__(self)
@@ -52,6 +55,8 @@ class Environment(threading.Thread):
 
         with self.env_lock:
             img = self.env.reset()
+
+        Environment.global_episodes += 1    
         img =  self.rgb2gray(img, True)
         s = np.zeros(self.OWN_IMAGE_SIZE)
         for i in range(self.OWN_IMAGE_STACK):    
@@ -71,6 +76,7 @@ class Environment(threading.Thread):
                 ####### Experimental: chagne rewards #####
                 #if r>0: r=4*r
                 #print (info)
+
 
             if not done:
                 img =  self.rgb2gray(img_rgb, True)
@@ -94,8 +100,10 @@ class Environment(threading.Thread):
         ######save model if Episode reward is high enough####
         if (R>Constants.MIN_SAVE_REWARD): 
             print ("JACKPOT: SAVING WEIGHTS")
-            self.agent.save_model_weights(path = Constants.SAVE_PATH + "_jackpot")
+            self.agent.save_model_weights(path = Constants.SAVE_PATH + "_e_" + str(Environment.global_episodes) + "_jackpot")
+            wrappers.Monitor(self.env, Constants.SAVE_PATH)
         print ("_________________________")
+
 
 
 

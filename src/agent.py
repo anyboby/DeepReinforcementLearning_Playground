@@ -1,5 +1,6 @@
 import numpy as np
 import random
+import threading
 
 from master_network import MasterNetwork
 
@@ -11,12 +12,14 @@ based on the policy the master network has determined. The action is chosen stoc
 """
 class Agent:
     frames = 0
-    def __init__ (self, master_network, eps_start=0.4, eps_end=0.15, eps_steps=75000, num_actions=4):
+    def __init__ (self, master_network, info_file, eps_start=0.4, eps_end=0.15, eps_steps=75000, num_actions=4):
         self.master_network = master_network
         self.eps_start = eps_start
         self.eps_end = eps_end
         self.eps_steps = eps_steps
         self.num_actions = num_actions
+        self.info_file  = info_file
+        
 
         
         self.memory = []  #used for n step return
@@ -39,7 +42,9 @@ class Agent:
         Agent.frames = Agent.frames + 1
         
         #save model
-        if Agent.frames%Constants.SAVE_FRAMES==0: self.save_model_weights(path = Constants.SAVE_PATH + "_e" + str(Agent.frames)[:-3])
+        if Agent.frames%Constants.SAVE_FRAMES==0: self.save_model_weights(path = Constants.SAVE_FILE + "_e" + str(Agent.frames)[:-3])
+
+
 
         if random.random() < epsilon:
             a = random.randint(0, self.num_actions-1)
@@ -50,9 +55,15 @@ class Agent:
         else:
             s = np.array([s])
             p = self.master_network.predict_p(s)[0]
+
             #a = np.argmax(p)
             a = np.random.choice(self.num_actions, p=p)
-            #if Agent.frames%100==0: print("acting from policy: {}, frame nr: {}, eps: {}".format(a, Agent.frames, epsilon))            
+            #if Agent.frames%100==0: print("acting from policy: {}, frame nr: {}, eps: {}".format(a, Agent.frames, epsilon))       
+             
+            #### write to info file
+            with threading.Lock():
+                if not Constants.REPLAY_MODE: self.info_file.write("frame: " + str(Agent.frames) + ", p: " + str(p) + ", a: " + str(a) + ", eps: " + str(epsilon) + "\n")
+     
 
             return a
         
