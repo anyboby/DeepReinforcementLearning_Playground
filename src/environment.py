@@ -38,10 +38,11 @@ class Environment(threading.Thread):
             self.actions = [[0,1,0],[0,0,0.8],[-1,0,0],[1,0,0]]
         """
         
-    """
-    executes runEpisode as long as no sigint is received
-    """    
+    
     def run(self):
+        """
+        executes runEpisode as long as no sigint is received
+        """
         while not self.stop_signal:
             self.runEpisode()
             
@@ -56,10 +57,11 @@ class Environment(threading.Thread):
         with self.env_lock:
             img = self.env.reset()
 
+
         Environment.global_episodes += 1    
         img =  self.rgb2gray(img, True)
         s = np.zeros(self.OWN_IMAGE_SIZE)
-        for i in range(self.OWN_IMAGE_STACK):    
+        for i in range(self.OWN_IMAGE_STACK):   
             s[:,:,i] = img
 
         R = 0

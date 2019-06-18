@@ -12,7 +12,7 @@ ENV = "CarRacing-v0"
 #150000 seconds for 1.7 days (currently about 10000 episodes)
 #60000 seconds for 16.7 hours (about 4000 episodes)
 #30000 seconds for 8.3 hours (currently about 2000 episodes)
-RUN_TIME = 60000
+RUN_TIME = 450
 # THREADS = 8
 THREADS = 2
 OPTIMIZERS = 1
@@ -20,13 +20,13 @@ THREAD_DELAY = 0.0001 # thread delay is needed to enable more parallel threads t
 
 #discount rate
 GAMMA = 0.99
-N_STEP_RETURN = 1
+N_STEP_RETURN = 8
 GAMMA_N = GAMMA ** N_STEP_RETURN
 
 
 EPS_START = 0.3
 EPS_STOP = .05
-EPS_STEPS = 4000000
+EPS_STEPS = 30000
 #10000000  # eps_steps should be approx. steps*number of episodes (in this case 1000 steps)
 
 IMAGE_WIDTH = 96
@@ -40,16 +40,16 @@ NONE_STATE = np.zeros(IMAGE_SIZE) #create Nullstate to append when s_ is None
 ########################
 # Log & saving #
 ########################
-LOG_FILE        =  'data_17_06_19/tmp/a3c_log'
-CHECKPOINT_DIR  =  'data_17_06_19/checkpoints'
+LOG_FILE        =  'data_18_06_19/tmp/a3c_log'
+CHECKPOINT_DIR  =  'data_18_06_19/checkpoints'
 
-INFO_PATH = "data_17_06_19/infos.txt"
-LOAD_PATH = "data_17_06_19/carRacing_exp_e1900"
-SAVE_FILE = "data_17_06_19/carRacing_exp_savedata"
+INFO_PATH = "data_18_06_19/infos.txt"
+LOAD_PATH = "data_18_06_19/carRacing_exp_e3700"
+SAVE_FILE = "data_18_06_19/carRacing_exp_savedata"
 
-MIN_SAVE_REWARD = 100
-SAVE_FRAMES = 100000
-REPLAY_MODE = False
+MIN_SAVE_REWARD = 40
+SAVE_FRAMES = 10000
+REPLAY_MODE = True
 
 MIN_BATCH = 32
 LEARNING_RATE = 1e-3
