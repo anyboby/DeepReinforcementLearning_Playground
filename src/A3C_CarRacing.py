@@ -63,6 +63,8 @@ if not Constants.REPLAY_MODE:
     for o in opts:
         o.join()
     
+master_network.init_tf_summary()
+
 print("Training finished")
 saver.save(master_network.session)
 

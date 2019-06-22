@@ -60,7 +60,7 @@ class Agent:
             # this theoretically shouldnt happen, but sometimes zeros is coming from predict, despite softmax (probably numerical problems)
             if not np.any(pi_NaN_safe): 
                 pi_NaN_safe = [1/self.num_actions for i in range(0,self.num_actions)]
-            print (pi_NaN_safe)
+            #print (pi_NaN_safe)
             a = np.random.choice(self.num_actions, p=pi_NaN_safe)
             return a, pi
         

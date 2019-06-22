@@ -46,24 +46,24 @@ class MasterNetwork:
     def _build_model(self):
         l_input = Input(shape = Constants.IMAGE_SIZE)   # input layer, shape:(?,96,96,4)
         x = l_input
-        x = Convolution2D(16, (8,8), strides=(4,4), activation="relu")(x)               
-                                                                                           
-        x = Convolution2D(32, (3,3), strides=(2,2), activation="relu")(x)      
-                                                                                           
-        x = Flatten()(x)                      
-        x = Dense (256, activation="relu")(x) 
-                                        
-        l_dense = Dense (16, activation="relu")(x)
-                                                      
-                
-        #actions need to have a correct probability distribution, hence the softmax activation
-        out_actions = Dense(Constants.NUM_ACTIONS, activation="softmax")(l_dense)  #output dense layer for actions: 
-                                                                            # kernel shape: (16,NUM_ACTIONS = 4 as of now)
-                                                                            # outputshape: (?, 4)
 
-        out_values = Dense(1, activation="linear")(l_dense)              #output dense layer for values: 
-                                                                            # kernel shape: (16,1)
-                                                                            # outputshape: (?, 1)
+        x = Convolution2D(16, (8,8), strides=(4,4), activation="relu")(x)      
+
+        x = Convolution2D(32, (3,3), strides=(2,2), activation="relu")(x)      
+
+        x = Flatten()(x)                      
+    
+        x = Dense (256, activation="relu")(x) 
+                                    
+        l_dense = Dense (16, activation="relu")(x)
+                                                    
+            
+        #actions need to have a correct probability distribution, hence the softmax activation
+        out_actions = Dense(Constants.NUM_ACTIONS, activation="softmax")(l_dense)  
+
+        out_values = Dense(1, activation="linear")(l_dense)              
+                                                                            
+                                                                        
         
         model = Model(inputs = [l_input], outputs=[out_actions, out_values])
         model._make_predict_function() #have to initialize before threading
@@ -83,12 +83,14 @@ class MasterNetwork:
     LV= (1/n) * ∑ [e_i²]
     """
     def _build_graph(self, model):
-        # 2D array placeholders that hold a whole batch later when called in minimize()
+        # array placeholders that hold a whole batch later when called in minimize()
         # first dimension is unlimited and represents training batches
-        # second dimension is number of variables
-        s_t = tf.placeholder(tf.float32, shape=(None, Constants.IMAGE_SIZE[0], Constants.IMAGE_SIZE[1], Constants.IMAGE_SIZE[2]))
-        a_t = tf.placeholder(tf.float32, shape=(None, Constants.NUM_ACTIONS))
-        r_t = tf.placeholder(tf.float32, shape=(None, 1))  #discounted n-step reward
+        # second dimension is number of variables (e.g. image width, second dim is image height, fourth width is stack size)
+        with tf.name_scope("state"):         
+            s_t = tf.placeholder(tf.float32, shape=(None, Constants.IMAGE_SIZE[0], Constants.IMAGE_SIZE[1], Constants.IMAGE_SIZE[2]), name = "state")
+
+        a_t = tf.placeholder(tf.float32, shape=(None, Constants.NUM_ACTIONS), name="actions")
+        r_t = tf.placeholder(tf.float32, shape=(None, 1), name = "rewards")  #discounted n-step reward
         
         # retrieve policy and value functions from Master Model
         p,v = model(s_t)
@@ -99,21 +101,23 @@ class MasterNetwork:
         # exact probability of taking the action a (a-th index in p) given state s
         # the small constant added is to prevent NaN errors, if a probability was zero 
         # (possible through eps-greedy)
-        log_prob = tf.log(tf.reduce_sum(p* a_t, axis=1, keepdims = True) + 1e-10)
+        with tf.name_scope("policy_calc"):         
+            log_prob = tf.log(tf.reduce_sum(p* a_t, axis=1, keepdims = True) + 1e-10)
         
-        # advantage for n-step reward, r_t holds the n-stepo return reward and approximates the 
-        # action-state function Q(s,a) 
-        advantage = r_t-v
+            # advantage for n-step reward, r_t holds the n-stepo return reward and approximates the 
+            # action-state function Q(s,a) 
+            advantage = r_t-v
         
-        # policy loss according to above def. the advantage is regarded as constant 
-        # and should not be included in tf gradient building. Averaging over the sum 
-        # is done later in the code
-        loss_policy = - log_prob * tf.stop_gradient(advantage)
+            # policy loss according to above def. the advantage is regarded as constant 
+            # and should not be included in tf gradient building. Averaging over the sum 
+            # is done later in the code
+            loss_policy = - log_prob * tf.stop_gradient(advantage)
         
-        # since Q(s,a) is approximated by n-step return reward r_t, the value error equals
-        # the advantage function now!
-        #loss_value = Constants.LOSS_V * tf.square(advantage) 
-        loss_value = Constants.LOSS_V * tf.nn.l2_loss(advantage)
+        with tf.name_scope("value_calc"):
+            # since Q(s,a) is approximated by n-step return reward r_t, the value error equals
+            # the advantage function now!
+            #loss_value = Constants.LOSS_V * tf.square(advantage) 
+            loss_value = Constants.LOSS_V * tf.nn.l2_loss(advantage)
 
         # maximize (@MO: minimize ?) entropy
         # It’s useful to know that entropy for fully deterministic policy (e.g. [1, 0, 0, 0] 
@@ -121,13 +125,15 @@ class MasterNetwork:
         # (e.g. [0.25, 0.25, 0.25, 0.25]).
         entropy = Constants.LOSS_ENTROPY * tf.reduce_sum(p * tf.log(p+1e-10), axis=1, keepdims = True)  
         
-        # The previously skipped average-over-sum's in one step now
-        loss_total = tf.reduce_mean(loss_policy + loss_value + entropy)
+        with tf.name_scope("overall_loss"):
+            # The previously skipped average-over-sum's in one step now
+            loss_total = tf.reduce_mean(loss_policy + loss_value + entropy)
         
-        optimizer = tf.train.RMSPropOptimizer(Constants.LEARNING_RATE,
-                                                 epsilon=Constants.RMSP.EPSILON,
-                                                 decay=Constants.RMSP.ALPHA)
-        minimize = optimizer.minimize(loss_total)
+        with tf.name_scope("train"):
+            optimizer = tf.train.RMSPropOptimizer(Constants.LEARNING_RATE,
+                                                    epsilon=Constants.RMSP.EPSILON,
+                                                    decay=Constants.RMSP.ALPHA)
+            minimize = optimizer.minimize(loss_total)
         
         return s_t, a_t, r_t, minimize
 
@@ -214,22 +220,24 @@ class MasterNetwork:
             _,v = self.model.predict(s)
             return v      
 
-    #def save_weights(self, path):
-    #    with self.lock_model:
-    #        print("saving...")
-    #        self.model.save(path)
-
-
-    #def load_weights(self):
-    #    with self.lock_model:
-    #        print("saving...")
-    #        self.model = load_model(Constants.SAVE_FILE)
-
     def init_tf_summary(self):
+        #score scalars
         score_input = tf.placeholder(tf.int32)
         tf.summary.scalar("score", score_input)
+        
+        #state images
+        state_input = tf.placeholder(tf.float32, shape=(None, Constants.IMAGE_SIZE[0], Constants.IMAGE_SIZE[1], Constants.IMAGE_SIZE[2]), name = "state")
+        tf.summary.image("state", state_input)
+
+        #add placeholder-histogramms to all trainable weights in the model
+        weight_phs = ()
+        for trainable_weight in self.model.trainable_weights:
+            weight_ph = tf.placeholder(tf.float32, shape=trainable_weight.shape)
+            tf.summary.histogram(trainable_weight.name, weight_ph)
+            weight_phs = weight_phs + (weight_ph,)
+
         summary_op      =  tf.summary.merge_all()
         summary_writer  =  tf.summary.FileWriter(Constants.LOG_FILE, self.session.graph)
-        return summary_writer, summary_op, score_input
+        return summary_writer, summary_op, score_input, state_input, weight_phs
 
 

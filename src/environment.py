@@ -3,6 +3,7 @@ import numpy as np
 from gym import wrappers
 import gym, threading, time
 import constants as Constants
+import tensorflow as tf
 
 """
 The Environment runs the number of predefined episodes in a loop
@@ -33,6 +34,8 @@ class Environment(threading.Thread):
         self.summary_writer = summary[0]
         self.summary_op = summary[1]
         self.score_input = summary[2]
+        self.state_input = summary[3]
+        self.weight_phs = summary[4]
 
         """ disabled for multithreading testing
         if isinstance(self.env.action_space, gym.spaces.Discrete): 
@@ -107,20 +110,25 @@ class Environment(threading.Thread):
             s = s_  #assume new state
             R += r  #add reward for the last step to total Rewards
 
+            if not done:
+                #tensorboard epxects batchsize in first dimension, so add additional dim
+                singleState = np.expand_dims(s, axis=0)
+
+                self._record_score(self.agent.master_network.session, self.summary_writer, self.summary_op, self.score_input, R, self.state_input, singleState, self.weight_phs, self.saveData.global_t, pi)
+
+
             self.local_t += 1
 
-                    #adding in early termination
-            if R > self.maxEpReward:
-                self.maxEpReward  = R
+            #######   adding in early termination  ############
+            # if R > self.maxEpReward:
+            #    self.maxEpReward  = R
 
-            if self.maxEpReward - R > 10:
-               done = True
+            # if self.maxEpReward - R > 10:
+            #   done = True
 
             if done or self.stop_signal:
 
-                print("score={}".format(R))
-                self._record_score(self.agent.master_network.session, self.summary_writer, self.summary_op, self.score_input, R, self.saveData.global_t, pi)
-
+                #print("score={}".format(R))
                 break
 
         print ("_________________________")
@@ -132,12 +140,34 @@ class Environment(threading.Thread):
         return diff_local_t
 
         
-    def _record_score(self, sess, summary_writer, summary_op, score_input, score, global_t, pi):
-        summary_str = sess.run(summary_op, feed_dict={ score_input: score })
+    def _record_score(self, sess, summary_writer, summary_op, score_input, score, state_input,  state, weight_phs,  global_t, pi):
+        model = self.agent.master_network.model
+
+        # only traverse layers containing weights or biases 
+        trainable_layers = [layer for layer in model.layers if len(layer.weights)!=0]
+        weights = []
+        for layer in trainable_layers:
+            layer_weights, layer_biases = layer.get_weights()
+            weights.append(layer_weights)
+            weights.append(layer_biases)
+        
+        #weights = [weight for weight in layer for layer in trainable_layersget_weights()] # weight tensors
+
+        #weights = [weight for weight in weights if model.get_layer(weight.name[:-2]).trainable] # filter down weights tensors to only ones which are trainable
+        #gradients = model.optimizer.get_gradients(model.total_loss, weights) # gradient tensors
+
+        #create dictionary to feed to session with tf placeholders as keys and arrays of weights/biases as value
+        feed_dict = { score_input: score, state_input: state}
+        for i in range(0,len(weight_phs)):
+            feed_dict.update({weight_phs[i].name:weights[i]})
+
+        #summary_str = sess.run(summary_op, feed_dict={ score_input: score, state_input: state, nn_input:weights1})
+        summary_str = sess.run(summary_op, feed_dict=feed_dict)
+
         summary_writer.add_summary(summary_str, global_t)
         summary_writer.flush()
 
-        print ("****** ADDING NEW SCORE ******")
+        #print ("****** ADDING NEW SCORE ******")
         self.saveData.append(score, pi)
         if score > Constants.MIN_SAVE_REWARD:
             self.saveData.requestSave()
