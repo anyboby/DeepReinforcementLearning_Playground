@@ -12,13 +12,12 @@ based on the policy the master network has determined. The action is chosen stoc
 """
 class Agent:
     frames = 0
-    def __init__ (self, master_network, info_file, eps_start=0.4, eps_end=0.15, eps_steps=75000, num_actions=4):
+    def __init__ (self, master_network, eps_start=0.4, eps_end=0.15, eps_steps=75000, num_actions=4):
         self.master_network = master_network
         self.eps_start = eps_start
         self.eps_end = eps_end
         self.eps_steps = eps_steps
         self.num_actions = num_actions
-        self.info_file  = info_file
         
 
         
@@ -42,30 +41,28 @@ class Agent:
         Agent.frames = Agent.frames + 1
         
         #save model
-        if Agent.frames%Constants.SAVE_FRAMES==0: self.save_model_weights(path = Constants.SAVE_FILE + "_e" + str(Agent.frames)[:-3])
+        #if Agent.frames%Constants.SAVE_FRAMES==0: self.save_model_weights(path = Constants.SAVE_FILE + "_e" + str(Agent.frames)[:-3])
 
 
 
         if random.random() < epsilon:
-            a = random.randint(0, self.num_actions-1)
-            #if Agent.frames%100==0: print("acting randomly: {}, frame nr: {}, eps: {}".format(a, Agent.frames, epsilon))            
-            return a
+            #if Agent.frames%100==0: print("acting randomly: {}, frame nr: {}, eps: {}".format(a, Agent.frames, epsilon)) 
+            uni_pi = [1/self.num_actions for i in range(0,self.num_actions)]       
+            a = np.random.choice(self.num_actions, p=uni_pi)
+    
+            return a, uni_pi
 
         
         else:
             s = np.array([s])
-            p = self.master_network.predict_p(s)[0]
-
-            #a = np.argmax(p)
-            a = np.random.choice(self.num_actions, p=p)
-            #if Agent.frames%100==0: print("acting from policy: {}, frame nr: {}, eps: {}".format(a, Agent.frames, epsilon))       
-             
-            #### write to info file
-            with threading.Lock():
-                if not Constants.REPLAY_MODE: self.info_file.write("frame: " + str(Agent.frames) + ", p: " + str(p) + ", a: " + str(a) + ", eps: " + str(epsilon) + "\n")
-     
-
-            return a
+            pi = self.master_network.predict_p(s)[0]
+            pi_NaN_safe = np.nan_to_num(pi)
+            # this theoretically shouldnt happen, but sometimes zeros is coming from predict, despite softmax (probably numerical problems)
+            if not np.any(pi_NaN_safe): 
+                pi_NaN_safe = [1/self.num_actions for i in range(0,self.num_actions)]
+            print (pi_NaN_safe)
+            a = np.random.choice(self.num_actions, p=pi_NaN_safe)
+            return a, pi
         
     """
     train receives a set of samples including state, action, reward and the next state
@@ -117,20 +114,9 @@ class Agent:
             self.R = self.R - self.memory[0][2]
             self.memory.pop(0)
     
-    def save_model_weights(self, path):
-        self.master_network.save_weights(path)
+    #def save_model_weights(self, path):
+    #    self.master_network.save_weights(path)
     
-    #def _record_score(self, sess, summary_writer, summary_op, score_input, score, global_t, pi):
-    #summary_str = sess.run(summary_op, feed_dict={ score_input: score })
-    #summary_writer.add_summary(summary_str, global_t)
-    #summary_writer.flush()
-
-    #if self.threadIndex == 0:
-    #  print '****** ADDING NEW SCORE ******'
-    #  self.saveData.append(score, pi)
-    #  if score > Constants.SAVE_SCORE_THRESHOLD:
-    #    self.saveData.requestSave()
-
 
 	# possible edge case - if an episode ends in <N steps, the computation is incorrect
 

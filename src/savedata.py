@@ -15,6 +15,6 @@ class SaveData:
 	def setScores(self, scores):
 		self.scores = scores
 
-	def append(self, value, pi):
-		pi = [float('%.6f' % val) for val in pi]
-		self.scores.append({"time": time.time(), "global": self.global_t, "value": value, "policy": pi})
+	def append(self, reward, pi):
+		pi = [float("%.6f" % val) for val in pi]
+		self.scores.append({"time": time.time(), "global": self.global_t, "reward": reward, "policy": pi})

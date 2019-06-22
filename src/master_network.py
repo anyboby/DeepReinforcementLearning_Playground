@@ -4,6 +4,7 @@ import tensorflow as tf
 from tensorflow import ConfigProto as cp
 
 import constants as Constants
+import matplotlib.pyplot as plt
 
 from keras.models import *
 from keras.layers import *
@@ -23,6 +24,7 @@ class MasterNetwork:
 
         ## these lines are based on stackoverflow to avoid gpu memory overusage error (https://github.com/tensorflow/tensorflow/issues/24828)
         self.replay_mode = replay_mode
+
         gpu_options = tf.GPUOptions(allow_growth=True)
         config = tf.compat.v1.ConfigProto(gpu_options=gpu_options)
         self.session = tf.Session(config=config)
@@ -33,35 +35,33 @@ class MasterNetwork:
         if not replay_mode: self.model = self._build_model()
         else:  self.model = load_model(Constants.LOAD_PATH) #+ "_jackpot" oder + "_<frameNumer>"
 
-
         self.graph = self._build_graph(self.model)
     
         self.session.run (tf.global_variables_initializer())
+
         self.default_graph = tf.get_default_graph()
         
-        if not replay_mode: self.default_graph.finalize()  #avoid modifications
+        #if not replay_mode: self.default_graph.finalize()  #avoid modifications
     
     def _build_model(self):
         l_input = Input(shape = Constants.IMAGE_SIZE)   # input layer, shape:(?,96,96,4)
         x = l_input
-        x = Convolution2D(16, (8,8), strides=(4,4), activation='relu')(x)               
+        x = Convolution2D(16, (8,8), strides=(4,4), activation="relu")(x)               
                                                                                            
-        x = Convolution2D(32, (3,3), strides=(2,2), activation='relu')(x)      
+        x = Convolution2D(32, (3,3), strides=(2,2), activation="relu")(x)      
                                                                                            
         x = Flatten()(x)                      
-        x = Dense (256, activation='relu')(x) 
+        x = Dense (256, activation="relu")(x) 
                                         
-        l_dense = Dense (16, activation='relu')(x)
+        l_dense = Dense (16, activation="relu")(x)
                                                       
-        
-        #l_dense = Dense(16, activation='relu')(l_input)
-        
+                
         #actions need to have a correct probability distribution, hence the softmax activation
-        out_actions = Dense(Constants.NUM_ACTIONS, activation='softmax')(l_dense)  #output dense layer for actions: 
+        out_actions = Dense(Constants.NUM_ACTIONS, activation="softmax")(l_dense)  #output dense layer for actions: 
                                                                             # kernel shape: (16,NUM_ACTIONS = 4 as of now)
                                                                             # outputshape: (?, 4)
 
-        out_values = Dense(1, activation='linear')(l_dense)              #output dense layer for values: 
+        out_values = Dense(1, activation="linear")(l_dense)              #output dense layer for values: 
                                                                             # kernel shape: (16,1)
                                                                             # outputshape: (?, 1)
         
@@ -91,7 +91,6 @@ class MasterNetwork:
         r_t = tf.placeholder(tf.float32, shape=(None, 1))  #discounted n-step reward
         
         # retrieve policy and value functions from Master Model
-        # @MO determine dimensions of p and v
         p,v = model(s_t)
         
         # we need the probability of a certain action a, given state s 
@@ -125,7 +124,6 @@ class MasterNetwork:
         # The previously skipped average-over-sum's in one step now
         loss_total = tf.reduce_mean(loss_policy + loss_value + entropy)
         
-        #@MO: what does RMSProp Optimizer do ? it allows manual learning rates but otherwise ?
         optimizer = tf.train.RMSPropOptimizer(Constants.LEARNING_RATE,
                                                  epsilon=Constants.RMSP.EPSILON,
                                                  decay=Constants.RMSP.ALPHA)
@@ -143,7 +141,6 @@ class MasterNetwork:
             time.sleep(0) #yield
             return
         
-        #@MO: WHY LOCK QUEUE, how is 'with' used in python ?
         # extract all samples from training queue with lock (for multithrading security)
         # 
         with self.lock_queue:
@@ -184,8 +181,8 @@ class MasterNetwork:
         
         
     def train_push(self, s, a, r, s_):
-        #@MO: what does this lock do ?
         with self.lock_queue:
+                        
             #queue s, a, and r into the training queue
             self.train_queue[0].append(s)
             self.train_queue[1].append(a)
@@ -209,22 +206,30 @@ class MasterNetwork:
         
     def predict_p(self, s):
         with self.default_graph.as_default():
-            p,v = self.model.predict(s)
+            p,_ = self.model.predict(s)
             return p
     
     def predict_v(self, s):
         with self.default_graph.as_default():
-            p,v = self.model.predict(s)
+            _,v = self.model.predict(s)
             return v      
 
-    def save_weights(self, path):
-        with self.lock_model:
-            print("saving...")
-            self.model.save(path)
+    #def save_weights(self, path):
+    #    with self.lock_model:
+    #        print("saving...")
+    #        self.model.save(path)
 
 
-    def load_weights(self):
-        with self.lock_model:
-            print("saving...")
-            self.model = load_model(Constants.SAVE_MODEL)
+    #def load_weights(self):
+    #    with self.lock_model:
+    #        print("saving...")
+    #        self.model = load_model(Constants.SAVE_FILE)
+
+    def init_tf_summary(self):
+        score_input = tf.placeholder(tf.int32)
+        tf.summary.scalar("score", score_input)
+        summary_op      =  tf.summary.merge_all()
+        summary_writer  =  tf.summary.FileWriter(Constants.LOG_FILE, self.session.graph)
+        return summary_writer, summary_op, score_input
+
 
