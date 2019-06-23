@@ -78,18 +78,28 @@ class Saver:
         print("saving data...")
         self.saveScores(self.data.scores)
 
+        def truncate(n, decimals=0):
+            multiplier = 10 ** decimals
+            return int(n * multiplier) / multiplier
+
+        #truncated reward
+        trnc_score = truncate(self.data.scores[-1]["reward"])
+
+        #replace - with m to prevent interference with other -
+        score_string = str(trnc_score).replace("-","neg",1)
+
         # Save TF checkpoint
         print("saving tf checkpoint...")
-        self.saver.save(session, self.checkpointDir + "/" + "checkpoint", global_step = self.data.global_t)
+        self.saver.save(session, self.checkpointDir + "/" + "checkpoint" + score_string, global_step = self.data.global_t)
 
     def canSave(self):
         return time.time() - self.lastSaveTime >= Constants.SAVE_FRAMES or \
-                abs(self.data.scores[-1]["reward"] - self.lastSaveScore) >= 40
+                abs(self.data.scores[-1]["reward"] - self.lastSaveScore) >= 1
 
     def saveIfRequested(self, session):
         if self.data.saveRequested:
             self.data.saveRequested = False
             if self.canSave():
-                print("Saving checkpoint as score crossed threshold of:", Constants.MIN_SAVE_REWARD)
+                #print("Saving checkpoint as score crossed threshold of:", Constants.MIN_SAVE_REWARD)
                 self.save(session)
                 self.lastSaveTime = time.time()

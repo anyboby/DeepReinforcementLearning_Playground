@@ -120,11 +120,11 @@ class Environment(threading.Thread):
             self.local_t += 1
 
             #######   adding in early termination  ############
-            # if R > self.maxEpReward:
-            #    self.maxEpReward  = R
+            if R > self.maxEpReward:
+                self.maxEpReward  = R
 
-            # if self.maxEpReward - R > 10:
-            #   done = True
+            if self.maxEpReward - R > 10:
+                done = True
 
             if done or self.stop_signal:
 
@@ -141,29 +141,23 @@ class Environment(threading.Thread):
 
         
     def _record_score(self, sess, summary_writer, summary_op, score_input, score, state_input,  state, weight_phs,  global_t, pi):
-        model = self.agent.master_network.model
-
+        master_network = self.agent.master_network
         # only traverse layers containing weights or biases 
-        trainable_layers = [layer for layer in model.layers if len(layer.weights)!=0]
+        trainable_layers = [layer for layer in master_network.model.layers if len(layer.weights)!=0]
         weights = []
         for layer in trainable_layers:
             layer_weights, layer_biases = layer.get_weights()
             weights.append(layer_weights)
             weights.append(layer_biases)
         
-        #weights = [weight for weight in layer for layer in trainable_layersget_weights()] # weight tensors
-
-        #weights = [weight for weight in weights if model.get_layer(weight.name[:-2]).trainable] # filter down weights tensors to only ones which are trainable
-        #gradients = model.optimizer.get_gradients(model.total_loss, weights) # gradient tensors
-
         #create dictionary to feed to session with tf placeholders as keys and arrays of weights/biases as value
         feed_dict = { score_input: score, state_input: state}
         for i in range(0,len(weight_phs)):
             feed_dict.update({weight_phs[i].name:weights[i]})
 
-        #summary_str = sess.run(summary_op, feed_dict={ score_input: score, state_input: state, nn_input:weights1})
         summary_str = sess.run(summary_op, feed_dict=feed_dict)
-
+        for summary in master_network.summaries:
+            summary_writer.add_summary(summary, global_t)
         summary_writer.add_summary(summary_str, global_t)
         summary_writer.flush()
 

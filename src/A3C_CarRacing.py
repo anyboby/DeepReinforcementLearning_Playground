@@ -24,7 +24,7 @@ import gym, time, random, threading
 print ("Env: {}, Action Space: ".format(Constants.ENV))
 
 # build master network
-master_network = MasterNetwork(replay_mode=Constants.REPLAY_MODE)
+master_network = MasterNetwork()
 summary = master_network.init_tf_summary()
 
 #saver manages data and tf model saving

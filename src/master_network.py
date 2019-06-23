@@ -10,6 +10,11 @@ from keras.models import *
 from keras.layers import *
 from keras import backend as Keras
 
+from savedata import SaveData
+
+
+
+
 """
 The Master Network delivers the policy and value function as output of the
 neural network it contains
@@ -20,10 +25,9 @@ class MasterNetwork:
     lock_queue = threading.Lock()
     lock_model = threading.Lock()
 
-    def __init__(self, replay_mode = False):
+    def __init__(self):
 
         ## these lines are based on stackoverflow to avoid gpu memory overusage error (https://github.com/tensorflow/tensorflow/issues/24828)
-        self.replay_mode = replay_mode
 
         gpu_options = tf.GPUOptions(allow_growth=True)
         config = tf.compat.v1.ConfigProto(gpu_options=gpu_options)
@@ -32,8 +36,7 @@ class MasterNetwork:
         Keras.manual_variable_initialization(True)
         
         #build model first
-        if not replay_mode: self.model = self._build_model()
-        else:  self.model = load_model(Constants.LOAD_PATH) #+ "_jackpot" oder + "_<frameNumer>"
+        self.model = self._build_model()
 
         self.graph = self._build_graph(self.model)
     
@@ -41,6 +44,10 @@ class MasterNetwork:
 
         self.default_graph = tf.get_default_graph()
         
+        self.summaries = []
+
+        #Keras.function(inputs=input_tensors, outputs=gradients)
+
         #if not replay_mode: self.default_graph.finalize()  #avoid modifications
     
     def _build_model(self):
@@ -128,14 +135,31 @@ class MasterNetwork:
         with tf.name_scope("overall_loss"):
             # The previously skipped average-over-sum's in one step now
             loss_total = tf.reduce_mean(loss_policy + loss_value + entropy)
-        
+            tf_loss_summary = tf.summary.scalar("loss", loss_total)
+            
         with tf.name_scope("train"):
             optimizer = tf.train.RMSPropOptimizer(Constants.LEARNING_RATE,
                                                     epsilon=Constants.RMSP.EPSILON,
                                                     decay=Constants.RMSP.ALPHA)
-            minimize = optimizer.minimize(loss_total)
+            #split training op def in two steps to get gradients for tensorboard
+            gradients = optimizer.compute_gradients(loss_total)
+            grads_clipped = tf.clip_by_global_norm(gradients, Constants.RMSP.GRADIENT_NORM_CLIP)
+            minimize = optimizer.apply_gradients(gradients)
         
-        return s_t, a_t, r_t, minimize
+            #add l2 norm of grads and variables histogramms to tf summary
+            self.l2grads_dict = {}
+            l2_norm = lambda t: tf.sqrt(tf.reduce_sum(tf.pow(t, 2)))
+            for gradient, variable in gradients:
+                if "dense_3" in variable.name or "dense_4" in variable.name:
+                    l2grad = l2_norm(gradient)
+                    l2var = l2_norm(variable)
+                    tf_gradnorm_summary = tf.summary.scalar(gradient.name, l2grad)
+                    tf_weightnorm_summary = tf.summary.scalar(variable.name, l2var)
+
+                    #self.l2grads_dict.update({gradient.name:l2grad, variable.name:l2var})
+
+
+        return s_t, a_t, r_t, minimize, tf_gradnorm_summary, tf_weightnorm_summary, tf_loss_summary
 
     """
     optimize preprocesses data and runs minimize() of MasterNetwork. optimize is called by 
@@ -180,12 +204,16 @@ class MasterNetwork:
         v = self.predict_v(s_)
         r = r + Constants.GAMMA_N * v * s_mask #set v to 0 where s_ is terminal state           
 
-        # retrieve placeholders
-        s_t, a_t, r_t, minimize = self.graph
-        #print("Learning them weightz")
-        self.session.run(minimize, feed_dict={s_t: s, a_t:a, r_t:r})
+        # retrieve placeholders including summary ops
+        s_t, a_t, r_t, minimize, tf_gradnorm_summary, tf_weightnorm_summary, tf_loss_summary = self.graph
+
+        _, grad_norm_str, weightnorm_str, loss_summary_str = self.session.run([minimize, tf_gradnorm_summary, tf_weightnorm_summary, tf_loss_summary], feed_dict={s_t: s, a_t:a, r_t:r})
         
-        
+        self.summaries.append(grad_norm_str)
+        self.summaries.append(weightnorm_str)
+        self.summaries.append(loss_summary_str)
+
+
     def train_push(self, s, a, r, s_):
         with self.lock_queue:
                         
@@ -223,21 +251,25 @@ class MasterNetwork:
     def init_tf_summary(self):
         #score scalars
         score_input = tf.placeholder(tf.int32)
-        tf.summary.scalar("score", score_input)
+        tf_score_summary = tf.summary.scalar("score", score_input)
         
         #state images
         state_input = tf.placeholder(tf.float32, shape=(None, Constants.IMAGE_SIZE[0], Constants.IMAGE_SIZE[1], Constants.IMAGE_SIZE[2]), name = "state")
-        tf.summary.image("state", state_input)
+        tf_image_summary = tf.summary.image("state", state_input)
 
         #add placeholder-histogramms to all trainable weights in the model
         weight_phs = ()
+        tf_weight_summaries = []
         for trainable_weight in self.model.trainable_weights:
             weight_ph = tf.placeholder(tf.float32, shape=trainable_weight.shape)
-            tf.summary.histogram(trainable_weight.name, weight_ph)
+            tf_weight_summary = tf.summary.histogram(trainable_weight.name, weight_ph)
             weight_phs = weight_phs + (weight_ph,)
+            tf_weight_summaries.append(tf_weight_summary)
 
-        summary_op      =  tf.summary.merge_all()
+
+        summary_op      =  tf.summary.merge([tf_score_summary, tf_image_summary]+tf_weight_summaries)
         summary_writer  =  tf.summary.FileWriter(Constants.LOG_FILE, self.session.graph)
+
         return summary_writer, summary_op, score_input, state_input, weight_phs
 
 
