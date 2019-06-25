@@ -226,11 +226,6 @@ class MasterNetwork:
         v = self.predict_v(s_)
         r = r + Constants.GAMMA_N * v * s_mask #set v to 0 where s_ is terminal state           
 
-        print(##################### OPTIMIZE #############################)
-        print (str(r))
-        print(##################### OPTIMIZE #############################)
-
-
         # retrieve placeholders including summary ops
         s_t, a_t, r_t, minimize, summaries = self.graph
 

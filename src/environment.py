@@ -1,4 +1,5 @@
 import numpy as np
+import cv2
 
 from gym import wrappers
 import gym, threading, time
@@ -15,9 +16,10 @@ class Environment(threading.Thread):
     #### TODO: Gescheiten frame und episodecounter für saving erstellen
     global_episodes = 0
 
-    def __init__(self, env, agent, summary, saver, render=False, eps_start=Constants.EPS_START, eps_end = Constants.EPS_STOP, eps_steps = Constants.EPS_STEPS):
+    def __init__(self, env, agent, summary, saver, render=False, eps_start=Constants.EPS_START, eps_end = Constants.EPS_STOP, eps_steps = Constants.EPS_STEPS, cvshow = False):
         threading.Thread.__init__(self)
         self.render = render
+        self.cvshow = cvshow
         self.env = env
         self.agent = agent
 
@@ -109,6 +111,12 @@ class Environment(threading.Thread):
 
             s = s_  #assume new state
             R += r  #add reward for the last step to total Rewards
+
+
+            #if self.cvshow:
+            #    cv2.imshow("image", s_)
+            #    cv2.waitKey(1)
+
 
             if not done:
                 #tensorboard epxects batchsize in first dimension, so add additional dim

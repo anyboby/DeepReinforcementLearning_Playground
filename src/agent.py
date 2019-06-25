@@ -89,7 +89,7 @@ class Agent:
         self.memory.append ((s, a_vec, r, s_))
         
         self.R = (self.R + r * GAMMA_N) / GAMMA
-        
+
         if s_ is None:
             while len(self.memory) > 0:
                 n = len(self.memory)
@@ -107,10 +107,27 @@ class Agent:
         
         if len(self.memory) >= Constants.N_STEP_RETURN:
             s, a, r, s_ = get_sample(self.memory, Constants.N_STEP_RETURN)
+
+            if r>30.13 or r<-0.78:
+
+                print("##################### Numerical Instability! #############################")
+                print (str(r))
+                print("##################### Numerical Instability! #############################")
+
+
             self.master_network.train_push(s, a, r, s_)
             
             #@MO DIEHIER NOCH CHECKEN
-            self.R = self.R - self.memory[0][2]
+            #self.R = self.R - self.memory[0][2]
+            #### Interesting: recalculating R explicitly because the recursive version is numerically instable 
+            #### to disurbances, they get propagated and amplified.
+            #### e.g. for n = 4 now R becomes
+            #### R = r_1*γ + r_2*γ²+r_3*γ³
+
+            self.R = 0
+            for i in range(Constants.N_STEP_RETURN-1):
+                self.R = self.R + self.memory[i+1][2]*Constants.GAMMA**i
+
             self.memory.pop(0)
     
     #def save_model_weights(self, path):
