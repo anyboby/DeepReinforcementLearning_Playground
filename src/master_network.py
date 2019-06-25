@@ -90,59 +90,78 @@ class MasterNetwork:
     LV= (1/n) * ∑ [e_i²]
     """
     def _build_graph(self, model):
-        # array placeholders that hold a whole batch later when called in minimize()
-        # first dimension is unlimited and represents training batches
-        # second dimension is number of variables (e.g. image width, second dim is image height, fourth width is stack size)
-        s_t = tf.placeholder(tf.float32, shape=(None, Constants.IMAGE_SIZE[0], Constants.IMAGE_SIZE[1], Constants.IMAGE_SIZE[2]), name = "state")
+        with tf.name_scope("loss_preparation"):      
 
-        a_t = tf.placeholder(tf.float32, shape=(None, Constants.NUM_ACTIONS), name="actions")
-        r_t = tf.placeholder(tf.float32, shape=(None, 1), name = "rewards")  #discounted n-step reward
-        
-        # retrieve policy and value functions from Master Model
-        p,v = model(s_t)
-        
-        summaries = []
+            # array placeholders that hold a whole batch later when called in minimize()
+            # first dimension is unlimited and represents training batches
+            # second dimension is number of variables (e.g. image width, second dim is image height, fourth width is stack size)
+            s_t = tf.placeholder(tf.float32, shape=(None, Constants.IMAGE_SIZE[0], Constants.IMAGE_SIZE[1], Constants.IMAGE_SIZE[2]), name = "state")
 
+            a_t = tf.placeholder(tf.float32, shape=(None, Constants.NUM_ACTIONS), name="actions")
+            r_t = tf.placeholder(tf.float32, shape=(None, 1), name = "rewards")  #discounted n-step reward
+            
+            # retrieve policy and value functions from Master Model
+            p,v = model(s_t)
+            
+            summaries = []
 
-        # we need the probability of a certain action a, given state s 
-        # therefore the probabilities p are multiplied with the hot_encoded vector a_t and sum-reduced
-        # (axis 1 representing the dimension of different actions)which will leave us the 
-        # exact probability of taking the action a (a-th index in p) given state s
-        # the small constant added is to prevent NaN errors, if a probability was zero 
-        # (possible through eps-greedy)
-        with tf.name_scope("policy_calc"):         
-            log_prob = tf.log(tf.reduce_sum(p* a_t, axis=1, keepdims = True) + 1e-10)
+            #mainly for tensorboard recordings
+            l2_norm = lambda t: tf.sqrt(tf.reduce_sum(tf.pow(t, 2)))
         
-            # advantage for n-step reward, r_t holds the n-stepo return reward and approximates the 
+
+            # we need the probability of a certain action a, given state s 
+            # therefore the probabilities p are multiplied with the hot_encoded vector a_t and sum-reduced
+            # (axis 1 representing the dimension of different actions)which will leave us the 
+            # exact probability of taking the action a (a-th index in p) given state s
+            # the small constant added is to prevent NaN errors, if a probability was zero 
+            # (possible through eps-greedy)
+            #avoid NaN for zero probabilities
+            pi_clipped = tf.clip_by_value(p, 1e-20, 1.0)   
+            log_prob = tf.log(tf.reduce_sum(pi_clipped* a_t, axis=1, keepdims = True) + 1e-10)
+        
+            # advantage for n-step reward, r_t holds the n-step return reward and approximates the 
             # action-state function Q(s,a) 
             advantage = r_t-v
-        
+            
+            #summaries for tb            
+            tf_v_summary = tf.summary.scalar("values", l2_norm(v))
+            summaries.append(tf_v_summary)
+
+            tf_r_summary = tf.summary.scalar("rewards", l2_norm(r_t))
+            summaries.append(tf_r_summary)
+            
+            tf_adv_summary = tf.summary.scalar("advantage", l2_norm(advantage))
+            summaries.append(tf_adv_summary)
+
             # policy loss according to above def. the advantage is regarded as constant 
             # and should not be included in tf gradient building. Averaging over the sum 
             # is done later in the code
             loss_policy = - log_prob * tf.stop_gradient(advantage)
-            #loss_policy = - tf.reduce_sum( tf.reduce_sum( tf.mul( log_pi, self.a ), reduction_indices=1 ) * self.td + entropy * entropy_beta )
+            
+            tf_ploss_summary = tf.summary.scalar("policy_loss", l2_norm(loss_policy))
+            summaries.append(tf_ploss_summary)
 
-        
-        with tf.name_scope("value_calc"):
+            
             # since Q(s,a) is approximated by n-step return reward r_t, the value error equals
             # the advantage function now!
             #loss_value = Constants.LOSS_V * tf.square(advantage) 
             loss_value = Constants.LOSS_V * tf.nn.l2_loss(advantage)
 
-        # maximize (@MO: minimize ?) entropy
-        # It’s useful to know that entropy for fully deterministic policy (e.g. [1, 0, 0, 0] 
-        # for four actions) is 0 and it is maximized for totally uniform policy 
-        # (e.g. [0.25, 0.25, 0.25, 0.25]).
-        entropy = Constants.LOSS_ENTROPY * tf.reduce_sum(p * tf.log(p+1e-10), axis=1, keepdims = True)  
-        
+            tf_vloss_summary = tf.summary.scalar("value_loss", l2_norm(loss_value))
+            summaries.append(tf_vloss_summary)
+
+            # maximize (@MO: minimize ?) entropy
+            # It’s useful to know that entropy for fully deterministic policy (e.g. [1, 0, 0, 0] 
+            # for four actions) is 0 and it is maximized for totally uniform policy 
+            # (e.g. [0.25, 0.25, 0.25, 0.25]).
+            entropy = Constants.LOSS_ENTROPY * tf.reduce_sum(p * tf.log(p+1e-10), axis=1, keepdims = True)  
+            
 
 
-        with tf.name_scope("overall_loss"):
             # The previously skipped average-over-sum's in one step now
             loss_total = tf.reduce_mean(loss_policy + loss_value + entropy)
-            tf_loss_summary = tf.summary.scalar("loss", loss_total)
-            summaries.append(tf_loss_summary)
+            tf_oloss_summary = tf.summary.scalar("overall_loss", loss_total)
+            summaries.append(tf_oloss_summary)
             
         with tf.name_scope("train"):
             optimizer = tf.train.RMSPropOptimizer(Constants.LEARNING_RATE,
@@ -154,7 +173,6 @@ class MasterNetwork:
             minimize = optimizer.apply_gradients(clipped_grads_and_vars)
         
             #add l2 norm of grads and variables histogramms to tf summary
-            l2_norm = lambda t: tf.sqrt(tf.reduce_sum(tf.pow(t, 2)))
             for gradient, variable in clipped_grads_and_vars:
                 if "dense_3" in variable.name or "dense_4" in variable.name:
                     tf_gradnorm_summary = tf.summary.scalar("grad_l2" + variable.name, l2_norm(gradient))
@@ -187,9 +205,11 @@ class MasterNetwork:
         # transform into blocks of numpy arrays
         #print("shape of s[0] : {}".format(s[0].shape))
         #print("shape of np.array(s) : {}".format(np.array(s).shape))
-        s = np.array(s)   # new shape of a: (32,96,96,4)
-        a = np.vstack(a)  # new shape of a: (32,4)
-        r = np.vstack(r)  # new shape of r: (32,1)
+        s = np.array(s)   
+        a = np.vstack(a)  
+        r = np.vstack(r)  
+
+        #print (str(r))
         #s_ = np.vstack(s_) # new shape of s_: (32,96,96,4)
         #print("shape of s_[0] : {}".format(s_[0].shape))
         #print("shape of np.array(s_) : {}".format(np.array(s_).shape))
@@ -205,6 +225,11 @@ class MasterNetwork:
         # the latest state s_, discounted and added. 
         v = self.predict_v(s_)
         r = r + Constants.GAMMA_N * v * s_mask #set v to 0 where s_ is terminal state           
+
+        print(##################### OPTIMIZE #############################)
+        print (str(r))
+        print(##################### OPTIMIZE #############################)
+
 
         # retrieve placeholders including summary ops
         s_t, a_t, r_t, minimize, summaries = self.graph

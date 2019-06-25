@@ -19,7 +19,6 @@ class Agent:
         self.eps_steps = eps_steps
         self.num_actions = num_actions
         
-
         
         self.memory = []  #used for n step return
         self.R = 0.
