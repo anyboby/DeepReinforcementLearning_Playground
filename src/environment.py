@@ -34,8 +34,8 @@ class Environment(threading.Thread):
         self.summary_writer = summary[0]
         self.summary_op = summary[1]
         self.score_input = summary[2]
-        self.state_input = summary[3]
-        self.weight_phs = summary[4]
+        #self.state_input = summary[3]
+        self.weight_phs = summary[3]
 
         """ disabled for multithreading testing
         if isinstance(self.env.action_space, gym.spaces.Discrete): 
@@ -114,8 +114,6 @@ class Environment(threading.Thread):
                 #tensorboard epxects batchsize in first dimension, so add additional dim
                 singleState = np.expand_dims(s, axis=0)
 
-                self._record_score(self.agent.master_network.session, self.summary_writer, self.summary_op, self.score_input, R, self.state_input, singleState, self.weight_phs, self.saveData.global_t, pi)
-
 
             self.local_t += 1
 
@@ -127,6 +125,7 @@ class Environment(threading.Thread):
                 done = True
 
             if done or self.stop_signal:
+                self._record_score(self.agent.master_network.session, self.summary_writer, self.summary_op, self.score_input, R, None, singleState, self.weight_phs, self.saveData.global_t, pi)
 
                 #print("score={}".format(R))
                 break
@@ -134,6 +133,8 @@ class Environment(threading.Thread):
         print ("_________________________")
         print ("{} finished an episode".format(threading.currentThread().getName()))
         print ("Total R: {}".format(R))
+        if self.global_episodes%50==0:
+            print (str(self.global_episodes) + " episodes haven been played so far!")
         print ("_________________________")
 
         diff_local_t = self.local_t - start_local_t
@@ -151,12 +152,13 @@ class Environment(threading.Thread):
             weights.append(layer_biases)
         
         #create dictionary to feed to session with tf placeholders as keys and arrays of weights/biases as value
-        feed_dict = { score_input: score, state_input: state}
+        #feed_dict = { score_input: score, state_input: state}
+        feed_dict = { score_input: score}
         for i in range(0,len(weight_phs)):
             feed_dict.update({weight_phs[i].name:weights[i]})
 
         summary_str = sess.run(summary_op, feed_dict=feed_dict)
-        for summary in master_network.summaries:
+        for summary in master_network.summary_strs:
             summary_writer.add_summary(summary, global_t)
         summary_writer.add_summary(summary_str, global_t)
         summary_writer.flush()

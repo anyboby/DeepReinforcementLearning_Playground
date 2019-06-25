@@ -44,7 +44,7 @@ class MasterNetwork:
 
         self.default_graph = tf.get_default_graph()
         
-        self.summaries = []
+        self.summary_strs = []
 
         #Keras.function(inputs=input_tensors, outputs=gradients)
 
@@ -93,8 +93,7 @@ class MasterNetwork:
         # array placeholders that hold a whole batch later when called in minimize()
         # first dimension is unlimited and represents training batches
         # second dimension is number of variables (e.g. image width, second dim is image height, fourth width is stack size)
-        with tf.name_scope("state"):         
-            s_t = tf.placeholder(tf.float32, shape=(None, Constants.IMAGE_SIZE[0], Constants.IMAGE_SIZE[1], Constants.IMAGE_SIZE[2]), name = "state")
+        s_t = tf.placeholder(tf.float32, shape=(None, Constants.IMAGE_SIZE[0], Constants.IMAGE_SIZE[1], Constants.IMAGE_SIZE[2]), name = "state")
 
         a_t = tf.placeholder(tf.float32, shape=(None, Constants.NUM_ACTIONS), name="actions")
         r_t = tf.placeholder(tf.float32, shape=(None, 1), name = "rewards")  #discounted n-step reward
@@ -102,6 +101,9 @@ class MasterNetwork:
         # retrieve policy and value functions from Master Model
         p,v = model(s_t)
         
+        summaries = []
+
+
         # we need the probability of a certain action a, given state s 
         # therefore the probabilities p are multiplied with the hot_encoded vector a_t and sum-reduced
         # (axis 1 representing the dimension of different actions)which will leave us the 
@@ -119,6 +121,8 @@ class MasterNetwork:
             # and should not be included in tf gradient building. Averaging over the sum 
             # is done later in the code
             loss_policy = - log_prob * tf.stop_gradient(advantage)
+            #loss_policy = - tf.reduce_sum( tf.reduce_sum( tf.mul( log_pi, self.a ), reduction_indices=1 ) * self.td + entropy * entropy_beta )
+
         
         with tf.name_scope("value_calc"):
             # since Q(s,a) is approximated by n-step return reward r_t, the value error equals
@@ -132,34 +136,32 @@ class MasterNetwork:
         # (e.g. [0.25, 0.25, 0.25, 0.25]).
         entropy = Constants.LOSS_ENTROPY * tf.reduce_sum(p * tf.log(p+1e-10), axis=1, keepdims = True)  
         
+
+
         with tf.name_scope("overall_loss"):
             # The previously skipped average-over-sum's in one step now
             loss_total = tf.reduce_mean(loss_policy + loss_value + entropy)
             tf_loss_summary = tf.summary.scalar("loss", loss_total)
+            summaries.append(tf_loss_summary)
             
         with tf.name_scope("train"):
             optimizer = tf.train.RMSPropOptimizer(Constants.LEARNING_RATE,
                                                     epsilon=Constants.RMSP.EPSILON,
                                                     decay=Constants.RMSP.ALPHA)
             #split training op def in two steps to get gradients for tensorboard
-            gradients = optimizer.compute_gradients(loss_total)
-            grads_clipped = tf.clip_by_global_norm(gradients, Constants.RMSP.GRADIENT_NORM_CLIP)
-            minimize = optimizer.apply_gradients(gradients)
+            grads_and_vars = optimizer.compute_gradients(loss_total)
+            clipped_grads_and_vars = [(tf.clip_by_norm(grad, Constants.RMSP.GRADIENT_NORM_CLIP), var) for grad, var in grads_and_vars]
+            minimize = optimizer.apply_gradients(clipped_grads_and_vars)
         
             #add l2 norm of grads and variables histogramms to tf summary
-            self.l2grads_dict = {}
             l2_norm = lambda t: tf.sqrt(tf.reduce_sum(tf.pow(t, 2)))
-            for gradient, variable in gradients:
+            for gradient, variable in clipped_grads_and_vars:
                 if "dense_3" in variable.name or "dense_4" in variable.name:
-                    l2grad = l2_norm(gradient)
-                    l2var = l2_norm(variable)
-                    tf_gradnorm_summary = tf.summary.scalar(gradient.name, l2grad)
-                    tf_weightnorm_summary = tf.summary.scalar(variable.name, l2var)
+                    tf_gradnorm_summary = tf.summary.scalar("grad_l2" + variable.name, l2_norm(gradient))
+                    tf_weightnorm_summary = tf.summary.scalar(variable.name + "_l2", l2_norm(variable))
+                    summaries = summaries + [tf_gradnorm_summary, tf_weightnorm_summary]
 
-                    #self.l2grads_dict.update({gradient.name:l2grad, variable.name:l2var})
-
-
-        return s_t, a_t, r_t, minimize, tf_gradnorm_summary, tf_weightnorm_summary, tf_loss_summary
+        return s_t, a_t, r_t, minimize, summaries
 
     """
     optimize preprocesses data and runs minimize() of MasterNetwork. optimize is called by 
@@ -205,13 +207,17 @@ class MasterNetwork:
         r = r + Constants.GAMMA_N * v * s_mask #set v to 0 where s_ is terminal state           
 
         # retrieve placeholders including summary ops
-        s_t, a_t, r_t, minimize, tf_gradnorm_summary, tf_weightnorm_summary, tf_loss_summary = self.graph
+        s_t, a_t, r_t, minimize, summaries = self.graph
 
-        _, grad_norm_str, weightnorm_str, loss_summary_str = self.session.run([minimize, tf_gradnorm_summary, tf_weightnorm_summary, tf_loss_summary], feed_dict={s_t: s, a_t:a, r_t:r})
-        
-        self.summaries.append(grad_norm_str)
-        self.summaries.append(weightnorm_str)
-        self.summaries.append(loss_summary_str)
+        #run minimization
+        results = self.session.run([minimize] + summaries, feed_dict={s_t: s, a_t:a, r_t:r})
+
+        #leave out result from minimize run
+        self.summary_strs = self.summary_strs + results[1:]
+
+        #.append(grad_norm_str)
+        #self.summaries.append(weightnorm_str)
+        #self.summaries.append(loss_summary_str)
 
 
     def train_push(self, s, a, r, s_):
@@ -254,8 +260,8 @@ class MasterNetwork:
         tf_score_summary = tf.summary.scalar("score", score_input)
         
         #state images
-        state_input = tf.placeholder(tf.float32, shape=(None, Constants.IMAGE_SIZE[0], Constants.IMAGE_SIZE[1], Constants.IMAGE_SIZE[2]), name = "state")
-        tf_image_summary = tf.summary.image("state", state_input)
+        #state_input = tf.placeholder(tf.float32, shape=(None, Constants.IMAGE_SIZE[0], Constants.IMAGE_SIZE[1], Constants.IMAGE_SIZE[2]), name = "state")
+        #tf_image_summary = tf.summary.image("state", state_input)
 
         #add placeholder-histogramms to all trainable weights in the model
         weight_phs = ()
@@ -267,9 +273,12 @@ class MasterNetwork:
             tf_weight_summaries.append(tf_weight_summary)
 
 
-        summary_op      =  tf.summary.merge([tf_score_summary, tf_image_summary]+tf_weight_summaries)
+        #summary_op      =  tf.summary.merge([tf_score_summary, tf_image_summary]+tf_weight_summaries)
+        summary_op      =  tf.summary.merge([tf_score_summary]+tf_weight_summaries)
         summary_writer  =  tf.summary.FileWriter(Constants.LOG_FILE, self.session.graph)
 
-        return summary_writer, summary_op, score_input, state_input, weight_phs
+        #return summary_writer, summary_op, score_input, state_input, weight_phs
+        return summary_writer, summary_op, score_input, weight_phs
+
 
 

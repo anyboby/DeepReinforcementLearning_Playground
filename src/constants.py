@@ -9,10 +9,13 @@ import numpy as np
 #CarRacing-v0
 ENV = "CarRacing-v0"
 
+
+#approximate speed: 1000frames/15seconds = 66frames/second
+
 #150000 seconds for 1.7 days (currently about 10000 episodes)
 #60000 seconds for 16.7 hours (about 4000 episodes)
 #30000 seconds for 8.3 hours (currently about 2000 episodes)
-RUN_TIME = 600
+RUN_TIME = 60000
 # THREADS = 8
 THREADS = 1
 OPTIMIZERS = 1
@@ -23,9 +26,9 @@ GAMMA = 0.99
 N_STEP_RETURN = 8
 GAMMA_N = GAMMA ** N_STEP_RETURN
 
-EPS_START = 0.5
+EPS_START = 0.4
 EPS_STOP = .1
-EPS_STEPS = 40000
+EPS_STEPS = 4000000
 # eps_steps should be approx. steps*number of episodes (in this case 1000 steps)
 
 IMAGE_WIDTH = 96
@@ -40,7 +43,7 @@ NONE_STATE = np.zeros(IMAGE_SIZE) #create Nullstate to append when s_ is None
 # Log & saving #
 ########################
 
-DATA_FOLDER = "data_21_06_19_4_clipped"
+DATA_FOLDER = "data_21_06_19_7_clipped"
 
 LOG_FILE        =  DATA_FOLDER + "/tmp/a3c_log"
 CHECKPOINT_DIR  =  DATA_FOLDER + "/checkpoints"
@@ -49,17 +52,17 @@ CHECKPOINT_DIR  =  DATA_FOLDER + "/checkpoints"
 SAVE_FILE = DATA_FOLDER + "/carRacing_savedata"
 
 MIN_SAVE_REWARD = 60
-SAVE_FRAMES = 5000
+SAVE_FRAMES = 50000
 REPLAY_MODE = False
 
 MIN_BATCH = 32
-LEARNING_RATE = 5e-4
+LEARNING_RATE = 1e-3
 
 #RMSP Parameters
 class RMSP:
     ALPHA       =  0.99      # decay parameter for RMSProp
     EPSILON     =  0.1       # epsilon parameter for RMSProp
-    GRADIENT_NORM_CLIP  =  40.0      # Gradient clipping norm
+    GRADIENT_NORM_CLIP  =  80.0      # Gradient clipping norm
 
 
 # these values are basically weights in the overall sum of losses
