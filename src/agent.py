@@ -73,8 +73,7 @@ class Agent:
         GAMMA_N = Constants.GAMMA_N
 
         """
-        returns a tupel array containing the state, action reward and n-th final state
-        depends on the Reward self.R to be calculated when called
+        returns a tupel array containing the state, action, discounted rewards (self.R) and n-th final state after n steps
         """
         def get_sample(memory, n):
             s, a, _, _ = memory[0]
@@ -117,8 +116,6 @@ class Agent:
 
             self.master_network.train_push(s, a, r, s_)
             
-            #@MO DIEHIER NOCH CHECKEN
-            #self.R = self.R - self.memory[0][2]
             #### Interesting: recalculating R explicitly because the recursive version is numerically instable 
             #### to disurbances, they get propagated and amplified.
             #### e.g. for n = 4 now R becomes
@@ -128,11 +125,7 @@ class Agent:
             for i in range(Constants.N_STEP_RETURN-1):
                 self.R = self.R + self.memory[i+1][2]*Constants.GAMMA**i
 
-            self.memory.pop(0)
-    
-    #def save_model_weights(self, path):
-    #    self.master_network.save_weights(path)
-    
+            self.memory.pop(0)    
 
 	# possible edge case - if an episode ends in <N steps, the computation is incorrect
 
