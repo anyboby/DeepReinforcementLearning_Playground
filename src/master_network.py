@@ -150,7 +150,6 @@ class MasterNetwork:
             tf_vloss_summary = tf.summary.scalar("value_loss", l2_norm(loss_value))
             summaries.append(tf_vloss_summary)
 
-            # maximize (@MO: minimize ?) entropy
             # It’s useful to know that entropy for fully deterministic policy (e.g. [1, 0, 0, 0] 
             # for four actions) is 0 and it is maximized for totally uniform policy 
             # (e.g. [0.25, 0.25, 0.25, 0.25]).
@@ -184,18 +183,19 @@ class MasterNetwork:
     """
     optimize preprocesses data and runs minimize() of MasterNetwork. optimize is called by 
     an optimizer, possibly multiple isntances of optimizer to handle incoming samples fast enough
+    returns true, if it actually trained
     """
-    def optimize(self):
+    def optimize(self, writesummaries = False):
         #make sure enough training samples are in queue, yield to other threads otherwise
         if len(self.train_queue[0])<Constants.MIN_BATCH:
             time.sleep(0) #yield
-            return
+            return False
         
         # extract all samples from training queue with lock (for multithrading security)
         # 
         with self.lock_queue:
             if len(self.train_queue[0]) < Constants.MIN_BATCH:
-                return
+                return False
             
             # s_mask indicates whether s_ is a dummy inserted due to terminal state being reached,
             # contains 0 (isDummy) or 1 (isNotDummy)
@@ -229,15 +229,21 @@ class MasterNetwork:
         # retrieve placeholders including summary ops
         s_t, a_t, r_t, minimize, summaries = self.graph
 
-        #run minimization
-        results = self.session.run([minimize] + summaries, feed_dict={s_t: s, a_t:a, r_t:r})
+        if writesummaries:
+            #run minimization + tb summaries
+            results = self.session.run([minimize] + summaries, feed_dict={s_t: s, a_t:a, r_t:r})
 
-        #leave out result from minimize run
-        self.summary_strs = self.summary_strs + results[1:]
+            #leave out result from minimize run
+            self.summary_strs = self.summary_strs + results[1:]
+        else: 
+            #run minimization only
+            self.session.run(minimize, feed_dict={s_t: s, a_t:a, r_t:r})
+        
+        return True
 
-        #.append(grad_norm_str)
-        #self.summaries.append(weightnorm_str)
-        #self.summaries.append(loss_summary_str)
+
+
+
 
 
     def train_push(self, s, a, r, s_):
@@ -275,6 +281,7 @@ class MasterNetwork:
             return v      
 
     def init_tf_summary(self):
+        
         #score scalars
         score_input = tf.placeholder(tf.int32)
         tf_score_summary = tf.summary.scalar("score", score_input)

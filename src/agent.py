@@ -12,7 +12,7 @@ based on the policy the master network has determined. The action is chosen stoc
 """
 class Agent:
     frames = 0
-    def __init__ (self, master_network, eps_start=0.4, eps_end=0.15, eps_steps=75000, num_actions=4):
+    def __init__ (self, master_network, eps_start=0.4, eps_end=0.15, eps_steps=75000, num_actions=Constants.NUM_ACTIONS):
         self.master_network = master_network
         self.eps_start = eps_start
         self.eps_end = eps_end
@@ -46,22 +46,23 @@ class Agent:
 
         if random.random() < epsilon:
             #if Agent.frames%100==0: print("acting randomly: {}, frame nr: {}, eps: {}".format(a, Agent.frames, epsilon)) 
-            uni_pi = [1/self.num_actions for i in range(0,self.num_actions)]       
-            a = np.random.choice(self.num_actions, p=uni_pi)
-    
-            return a, uni_pi
+            uni_pi = [1/self.num_actions for i in range(0,self.num_actions)]    
+            a = random.randint(0,self.num_actions-1)
+            p = i*random.random()
+            return a, uni_pi, p
 
         
         else:
             s = np.array([s])
             pi = self.master_network.predict_p(s)[0]
-            pi_NaN_safe = np.nan_to_num(pi)
-            # this theoretically shouldnt happen, but sometimes zeros is coming from predict, despite softmax (probably numerical problems)
-            if not np.any(pi_NaN_safe): 
-                pi_NaN_safe = [1/self.num_actions for i in range(0,self.num_actions)]
-            #print (pi_NaN_safe)
-            a = np.random.choice(self.num_actions, p=pi_NaN_safe)
-            return a, pi
+
+            #choose action with prob distribution of pi
+            a = np.random.choice(range(len(pi)), p=pi)
+            p = pi[a]
+
+            #a = [i*p for i in Constants.DISC_ACTIONS[a_i]]
+
+            return a, pi, p
         
     """
     train receives a set of samples including state, action, reward and the next state
@@ -81,11 +82,10 @@ class Agent:
             
             return s, a, self.R, s_
 
-        a_vec = np.zeros(self.num_actions)
-        a_vec[a] = 1          #later needed, to access chosen action by easy multiplication  (maybe a-1 ?)
-                              #Tensorflow does not allow indexed inputs
+        a_hot = np.zeros(self.num_actions)
+        a_hot[a] = 1          #later needed, to access chosen action by easy multiplication 
         
-        self.memory.append ((s, a_vec, r, s_))
+        self.memory.append ((s, a_hot, r, s_))
         
         self.R = (self.R + r * GAMMA_N) / GAMMA
 
@@ -112,7 +112,6 @@ class Agent:
                 print("##################### Numerical Instability! #############################")
                 print (str(r))
                 print("##################### Numerical Instability! #############################")
-
 
             self.master_network.train_push(s, a, r, s_)
             

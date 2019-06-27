@@ -23,8 +23,6 @@ class Environment(threading.Thread):
         self.env = env
         self.agent = agent
 
-        self.disc_action_space = 4
-        self.actions = [[0,1,0],[0,0,0.8],[-1,0,0],[1,0,0]]
         self.OWN_IMAGE_SIZE = Constants.IMAGE_SIZE
         self.OWN_IMAGE_STACK = Constants.IMAGE_STACK
 
@@ -93,9 +91,11 @@ class Environment(threading.Thread):
             time.sleep(Constants.THREAD_DELAY) #yield delay for safety
             
             if self.render: self.env.render()
-            a, pi = self.agent.act(s)  #action based on current state
+            a, pi, p = self.agent.act(s)  #action based on current state
+            action = [i*p for i in Constants.DISC_ACTIONS[a]]
+
             with self.env_lock:
-                img_rgb, r, done, info = self.env.step(self.actions[a]) #retrieve the next state and reward for the corresponding action
+                img_rgb, r, done, info = self.env.step(action) #retrieve the next state and reward for the corresponding action
 
             if not done:
                 img =  self.rgb2gray(img_rgb, True)
@@ -107,15 +107,16 @@ class Environment(threading.Thread):
                 s_ = None
 
             #let agent put data in memory and possibly trigger optimization
-            self.agent.train(s, a, r, s_) 
+            self.agent.train(s, a, r, s_,) 
 
             s = s_  #assume new state
             R += r  #add reward for the last step to total Rewards
 
 
-            #if self.cvshow:
-            #    cv2.imshow("image", s_)
-            #    cv2.waitKey(1)
+            #skip frames for speed
+            if self.cvshow and self.local_t%3==0:
+                cv2.imshow("image", s_)
+                cv2.waitKey(1)
 
 
             if not done:
@@ -129,7 +130,7 @@ class Environment(threading.Thread):
             if R > self.maxEpReward:
                 self.maxEpReward  = R
 
-            if self.maxEpReward - R > 10:
+            if self.maxEpReward - R > Constants.EARLY_TERMINATION:
                 done = True
 
             if done or self.stop_signal:
