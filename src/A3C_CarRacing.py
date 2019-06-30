@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 from keras.models import load_model
 
 from saver import Saver
+from savedata import SaveData
 
 import gym, time, random, threading
            
@@ -23,12 +24,13 @@ import gym, time, random, threading
 # check action space
 print ("Env: {}, Action Space: ".format(Constants.ENV))
 
+data = SaveData()
 # build master network
-master_network = MasterNetwork()
+master_network = MasterNetwork(data)
 summary = master_network.init_tf_summary()
 
 #saver manages data and tf model saving
-saver = Saver()
+saver = Saver(data)
 
 #testing env for playing in the end
 env_test = Environment(gym.make(Constants.ENV), Agent(master_network, Constants.EPS_START, Constants.EPS_STOP, Constants.EPS_STEPS), summary, saver, render=True, eps_start=0., eps_end=0.)
@@ -54,7 +56,9 @@ if not Constants.REPLAY_MODE:
         o.start()
     for e in envs:
         e.start()
-    time.sleep(Constants.RUN_TIME)
+
+    while data.global_t<Constants.RUN_TIME:
+        time.sleep(10)
 
     for e in envs:
         e.stop()

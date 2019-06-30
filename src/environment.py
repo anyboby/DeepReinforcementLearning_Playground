@@ -13,8 +13,8 @@ Based on a gym environment containing an instance of the agent
 class Environment(threading.Thread):
     stop_signal = False
     env_lock = threading.Lock()
-    #### TODO: Gescheiten frame und episodecounter für saving erstellen
     global_episodes = 0
+    maxScore = 0
 
     def __init__(self, env, agent, summary, saver, render=False, eps_start=Constants.EPS_START, eps_end = Constants.EPS_STOP, eps_steps = Constants.EPS_STEPS, cvshow = False):
         threading.Thread.__init__(self)
@@ -27,7 +27,9 @@ class Environment(threading.Thread):
         self.OWN_IMAGE_STACK = Constants.IMAGE_STACK
 
         self.saver = saver
-        self.saveData = saver.data
+        self.data = saver.data
+
+        #local_t are frames, global_t are overall frames done from all envs etc.
         self.local_t = 0
         self.maxEpReward = 0
 
@@ -59,7 +61,7 @@ class Environment(threading.Thread):
         while not self.stop_signal:
             
             diff_global_t = self.runEpisode()
-            self.saveData.global_t += diff_global_t
+            self.data.global_t += diff_global_t
             self.saver.saveIfRequested(self.agent.master_network.session)
 
 
@@ -75,9 +77,7 @@ class Environment(threading.Thread):
         with self.env_lock:
             img = self.env.reset()
 
-
-        Environment.global_episodes += 1    
-        img =  self.rgb2gray(img, True)
+        img =  self._process_img(img)
         s = np.zeros(self.OWN_IMAGE_SIZE)
         for i in range(self.OWN_IMAGE_STACK):   
             s[:,:,i] = img
@@ -98,7 +98,7 @@ class Environment(threading.Thread):
                 img_rgb, r, done, info = self.env.step(action) #retrieve the next state and reward for the corresponding action
 
             if not done:
-                img =  self.rgb2gray(img_rgb, True)
+                img =  self._process_img(img_rgb)
 
                 for i in range(self.OWN_IMAGE_STACK-1):
                     s_[:,:,i] = s_[:,:,i+1]  # update stacked layers with the older stacked layers from previous step 
@@ -106,17 +106,20 @@ class Environment(threading.Thread):
             else:    #last step of episode is finished, no next state
                 s_ = None
 
-            #let agent put data in memory and possibly trigger optimization
-            self.agent.train(s, a, r, s_,) 
-
             s = s_  #assume new state
             R += r  #add reward for the last step to total Rewards
 
 
+            #clip rewards and send to agent
+            #let agent put data in memory and possibly trigger optimization
+            self.agent.train(s, a, np.clip(r, -1, 1), s_,) 
+
+            if s_ is None:  print ("none")
             #skip frames for speed
-            if self.cvshow and self.local_t%3==0:
+            if self.cvshow and self.local_t%3==0 and s_ is not None:
                 cv2.imshow("image", s_)
                 cv2.waitKey(1)
+            
 
 
             if not done:
@@ -134,16 +137,16 @@ class Environment(threading.Thread):
                 done = True
 
             if done or self.stop_signal:
-                self._record_score(self.agent.master_network.session, self.summary_writer, self.summary_op, self.score_input, R, None, singleState, self.weight_phs, self.saveData.global_t, pi)
-
+                self._record_score(self.agent.master_network.session, self.summary_writer, self.summary_op, self.score_input, R, None, singleState, self.weight_phs, self.data.global_t, pi)
+                Environment.global_episodes += 1
                 #print("score={}".format(R))
                 break
 
         print ("_________________________")
         print ("{} finished an episode".format(threading.currentThread().getName()))
         print ("Total R: {}".format(R))
-        if self.global_episodes%50==0:
-            print (str(self.global_episodes) + " episodes haven been played so far!")
+        if Environment.global_episodes%100==0:
+            print (str(Environment.global_episodes) + " episodes haven been played so far!")
         print ("_________________________")
 
         diff_local_t = self.local_t - start_local_t
@@ -173,11 +176,29 @@ class Environment(threading.Thread):
         summary_writer.flush()
 
         #print ("****** ADDING NEW SCORE ******")
-        self.saveData.append(score, pi)
-        if score > Constants.MIN_SAVE_REWARD:
-            self.saveData.requestSave()
+        self.data.append(score, pi)
 
-    def rgb2gray(self, rgb, norm):
+        if score > Environment.maxScore:
+            Environment.maxScore = score
+            self.saver.save()
+        elif score > Constants.MIN_SAVE_REWARD:
+            self.data.requestSave()
+
+    #####################
+    ### Preprocessing ###
+    #####################
+
+    def _process_img(self, img):
+        """
+        preprocess a state which is given as : (96, 96, 3)
+        """
+        img = self._rgb2gray(img, True) # squash to 96 x 96
+        #img = self._zero_center(img)
+        img = self._crop(img)
+        return img
+
+
+    def _rgb2gray(self, rgb, norm):
    
         gray = np.dot(rgb[...,:3], [0.299, 0.587, 0.114])
         
@@ -186,3 +207,15 @@ class Environment(threading.Thread):
             gray = gray.astype("float32") / 128 - 1 
 
         return gray 
+
+    def _zero_center(self, img):
+        #return np.divide(frame - 127, 127.0)
+        return img - 127.0
+
+    def _crop(self, img, length=12):
+        """
+        crop 96 by 96 to 84 by 84
+        """
+        h = len(img)
+        w = len(img[0])
+        return img[0:h - length, (int)(length/2):w - (int)(length/2)]

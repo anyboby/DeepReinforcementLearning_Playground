@@ -1,6 +1,5 @@
 import tensorflow as tf
 import os, time, json
-from savedata import SaveData
 import constants as Constants
 
 
@@ -13,9 +12,9 @@ import constants as Constants
 # allocated in a rotating fashion, similar to time-division multiplexing in communications practice.
 
 class Saver:
-    def __init__(self, checkpointDir=Constants.CHECKPOINT_DIR, saveFile=Constants.SAVE_FILE, lastSaveTime=time.time()):
+    def __init__(self, saveData, checkpointDir=Constants.CHECKPOINT_DIR, saveFile=Constants.SAVE_FILE, lastSaveTime=time.time()):
         self.saver          =  tf.train.Saver()
-        self.data           =  SaveData()
+        self.data           =  saveData
         self.checkpointDir  =  checkpointDir
         self.checkpoint     =  tf.train.get_checkpoint_state(self.checkpointDir)
         self.saveFilename   =  saveFile

@@ -25,7 +25,7 @@ class MasterNetwork:
     lock_queue = threading.Lock()
     lock_model = threading.Lock()
 
-    def __init__(self):
+    def __init__(self, savedata):
 
         ## these lines are based on stackoverflow to avoid gpu memory overusage error (https://github.com/tensorflow/tensorflow/issues/24828)
 
@@ -35,6 +35,8 @@ class MasterNetwork:
         Keras.set_session(self.session)
         Keras.manual_variable_initialization(True)
         
+        self.data = savedata
+
         #build model first
         self.model = self._build_model()
 
@@ -45,6 +47,7 @@ class MasterNetwork:
         self.default_graph = tf.get_default_graph()
         
         self.summary_strs = []
+
 
         #Keras.function(inputs=input_tensors, outputs=gradients)
 
@@ -62,13 +65,13 @@ class MasterNetwork:
     
         x = Dense (256, activation="relu")(x) 
                                     
-        l_dense = Dense (16, activation="relu")(x)
+        #l_dense = Dense (16, activation="relu")(x)
                                                     
             
         #actions need to have a correct probability distribution, hence the softmax activation
-        out_actions = Dense(Constants.NUM_ACTIONS, activation="softmax")(l_dense)  
+        out_actions = Dense(Constants.NUM_ACTIONS, activation="softmax")(x)  
 
-        out_values = Dense(1, activation="linear")(l_dense)              
+        out_values = Dense(1, activation="linear")(x)              
                                                                             
                                                                         
         
@@ -96,12 +99,11 @@ class MasterNetwork:
             # first dimension is unlimited and represents training batches
             # second dimension is number of variables (e.g. image width, second dim is image height, fourth width is stack size)
             s_t = tf.placeholder(tf.float32, shape=(None, Constants.IMAGE_SIZE[0], Constants.IMAGE_SIZE[1], Constants.IMAGE_SIZE[2]), name = "state")
-
             a_t = tf.placeholder(tf.float32, shape=(None, Constants.NUM_ACTIONS), name="actions")
             r_t = tf.placeholder(tf.float32, shape=(None, 1), name = "rewards")  #discounted n-step reward
             
             # retrieve policy and value functions from Master Model
-            p,v = model(s_t)
+            pi,v = model(s_t)
             
             summaries = []
 
@@ -116,7 +118,7 @@ class MasterNetwork:
             # the small constant added is to prevent NaN errors, if a probability was zero 
             # (possible through eps-greedy)
             #avoid NaN for zero probabilities
-            pi_clipped = tf.clip_by_value(p, 1e-20, 1.0)   
+            pi_clipped = tf.clip_by_value(pi, 1e-20, 1.0)   
             log_prob = tf.log(tf.reduce_sum(pi_clipped* a_t, axis=1, keepdims = True) + 1e-10)
         
             # advantage for n-step reward, r_t holds the n-step return reward and approximates the 
@@ -145,7 +147,7 @@ class MasterNetwork:
             # since Q(s,a) is approximated by n-step return reward r_t, the value error equals
             # the advantage function now!
             #loss_value = Constants.LOSS_V * tf.square(advantage) 
-            loss_value = Constants.LOSS_V * tf.nn.l2_loss(advantage)
+            loss_value = Constants.LOSS_V * tf.square(advantage)
 
             tf_vloss_summary = tf.summary.scalar("value_loss", l2_norm(loss_value))
             summaries.append(tf_vloss_summary)
@@ -153,7 +155,7 @@ class MasterNetwork:
             # It’s useful to know that entropy for fully deterministic policy (e.g. [1, 0, 0, 0] 
             # for four actions) is 0 and it is maximized for totally uniform policy 
             # (e.g. [0.25, 0.25, 0.25, 0.25]).
-            entropy = Constants.LOSS_ENTROPY * tf.reduce_sum(p * tf.log(p+1e-10), axis=1, keepdims = True)  
+            entropy = Constants.LOSS_ENTROPY * tf.reduce_sum(pi_clipped * tf.log(pi_clipped+1e-10), axis=1, keepdims = True)  
             
 
 
@@ -163,9 +165,19 @@ class MasterNetwork:
             summaries.append(tf_oloss_summary)
             
         with tf.name_scope("train"):
-            optimizer = tf.train.RMSPropOptimizer(Constants.LEARNING_RATE,
+
+
+            self.lr = tf.train.polynomial_decay(Constants.LEARNING_RATE, self.data.global_t, Constants.RUN_TIME, 0.000001, 1.0)
+            tf_lr_summary = tf.summary.scalar("learnrate", self.lr)
+            summaries.append(tf_lr_summary)
+
+            #optimizer = tf.train.RMSPropOptimizer(self.lr,
+            #                                        epsilon=Constants.RMSP.EPSILON,
+            #                                        decay=Constants.RMSP.ALPHA)
+
+            optimizer = tf.train.RMSPropOptimizer(self.lr,
                                                     epsilon=Constants.RMSP.EPSILON,
-                                                    decay=Constants.RMSP.ALPHA)
+                                                    decay=0)
             #split training op def in two steps to get gradients for tensorboard
             grads_and_vars = optimizer.compute_gradients(loss_total)
             clipped_grads_and_vars = [(tf.clip_by_norm(grad, Constants.RMSP.GRADIENT_NORM_CLIP), var) for grad, var in grads_and_vars]
@@ -173,7 +185,7 @@ class MasterNetwork:
         
             #add l2 norm of grads and variables histogramms to tf summary
             for gradient, variable in clipped_grads_and_vars:
-                if "dense_3" in variable.name or "dense_4" in variable.name:
+                if "dense_3" in variable.name or "dense_2" in variable.name:
                     tf_gradnorm_summary = tf.summary.scalar("grad_l2" + variable.name, l2_norm(gradient))
                     tf_weightnorm_summary = tf.summary.scalar(variable.name + "_l2", l2_norm(variable))
                     summaries = summaries + [tf_gradnorm_summary, tf_weightnorm_summary]
@@ -203,11 +215,10 @@ class MasterNetwork:
             self.train_queue = [ [], [], [], [], []]
             
         # transform into blocks of numpy arrays
-        #print("shape of s[0] : {}".format(s[0].shape))
-        #print("shape of np.array(s) : {}".format(np.array(s).shape))
-        s = np.array(s)   
-        a = np.vstack(a)  
-        r = np.vstack(r)  
+        # reshape arrays from row vectors to colums (vertical) vectors
+        s = np.array(s)
+        a = np.vstack(a)
+        r = np.vstack(r)
 
         #print (str(r))
         #s_ = np.vstack(s_) # new shape of s_: (32,96,96,4)
@@ -226,19 +237,32 @@ class MasterNetwork:
         v = self.predict_v(s_)
         r = r + Constants.GAMMA_N * v * s_mask #set v to 0 where s_ is terminal state           
 
+
         # retrieve placeholders including summary ops
         s_t, a_t, r_t, minimize, summaries = self.graph
 
         if writesummaries:
-            #run minimization + tb summaries
-            results = self.session.run([minimize] + summaries, feed_dict={s_t: s, a_t:a, r_t:r})
+            
+            try:
+                #run minimization + tb summaries
+                results = self.session.run([minimize] + summaries, feed_dict={s_t: s, a_t:a, r_t:r})
 
-            #leave out result from minimize run
-            self.summary_strs = self.summary_strs + results[1:]
+                #leave out result from minimize run
+                self.summary_strs = self.summary_strs + results[1:]
+            except:
+                print ("s_t: " + str(s))
+                print ("a_t: " + str(a))
+                print ("r_t: " + str(r))
+
         else: 
+            #print (r)
             #run minimization only
-            self.session.run(minimize, feed_dict={s_t: s, a_t:a, r_t:r})
-        
+            try:
+                self.session.run(minimize, feed_dict={s_t: s, a_t:a, r_t:r})
+            except:
+                print ("s_t: " + str(s))
+                print ("a_t: " + str(a))
+                print ("r_t: " + str(r))
         return True
 
 

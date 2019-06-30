@@ -1,4 +1,5 @@
 import threading
+import constants as Constants
 
 """
 The optimizer calls MasterNetwork.optimize() endlessly in a loop, possibly from multiple threads
@@ -7,7 +8,6 @@ class Optimizer(threading.Thread):
     
     stop_signal = False
     write_summaries = False
-    summary_steps = 500
     
     def __init__(self, master_network):
         threading.Thread.__init__(self)
@@ -24,7 +24,7 @@ class Optimizer(threading.Thread):
                 trained = self.master_network.optimize()
                 if trained:
                     trainings += 1
-                    if trainings % Optimizer.summary_steps == 0: 
+                    if trainings % Constants.SUMMARY_STEPS == 0: 
                         Optimizer.write_summaries = True
     def stop(self):
         self.stop_signal = True

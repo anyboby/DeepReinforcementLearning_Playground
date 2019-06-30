@@ -48,7 +48,7 @@ class Agent:
             #if Agent.frames%100==0: print("acting randomly: {}, frame nr: {}, eps: {}".format(a, Agent.frames, epsilon)) 
             uni_pi = [1/self.num_actions for i in range(0,self.num_actions)]    
             a = random.randint(0,self.num_actions-1)
-            p = i*random.random()
+            p = 1
             return a, uni_pi, p
 
         
@@ -92,39 +92,41 @@ class Agent:
         if s_ is None:
             while len(self.memory) > 0:
                 n = len(self.memory)
-                s, a, r, s_ = get_sample(self.memory, n)
+                s, a, R, s_ = get_sample(self.memory, n)
                 # if n<3:
                 #    print("n is 0, s has the shape: {}".format(s))
                 #    print("n is 0, s_ has the shape: {}".format(s_))
 
-                self.master_network.train_push(s, a, r, s_)
-                
+                if s is  not None:
+                    self.master_network.train_push(s, a, R, s_)
+                else: 
+                    print ("s is none for some reason!!!")
+
                 #@MO DIEHIER NOCH CHECKEN
                 self.R = (self.R - self.memory[0][2]) / GAMMA
                 self.memory.pop(0)
             self.R = 0
         
         if len(self.memory) >= Constants.N_STEP_RETURN:
-            s, a, r, s_ = get_sample(self.memory, Constants.N_STEP_RETURN)
+            s, a, R, s_ = get_sample(self.memory, Constants.N_STEP_RETURN)
 
-            if r>30.13 or r<-0.78:
+            if R>30.13 or R<-0.78:
 
                 print("##################### Numerical Instability! #############################")
-                print (str(r))
+                print (str(R))
                 print("##################### Numerical Instability! #############################")
 
-            self.master_network.train_push(s, a, r, s_)
-            
+            self.master_network.train_push(s, a, R, s_)
+        
+            self.memory.pop(0)    
+
             #### Interesting: recalculating R explicitly because the recursive version is numerically instable 
             #### to disurbances, they get propagated and amplified.
             #### e.g. for n = 4 now R becomes
             #### R = r_1*γ + r_2*γ²+r_3*γ³
-
             self.R = 0
-            for i in range(Constants.N_STEP_RETURN-1):
-                self.R = self.R + self.memory[i+1][2]*Constants.GAMMA**i
+            for i in range(Constants.N_STEP_RETURN-2):
+                self.R = self.R + self.memory[i][2]*Constants.GAMMA**(i+1)
 
-            self.memory.pop(0)    
 
 	# possible edge case - if an episode ends in <N steps, the computation is incorrect
-
