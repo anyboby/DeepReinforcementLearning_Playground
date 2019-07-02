@@ -12,11 +12,14 @@ ENV = "CarRacing-v0"
 
 #approximate speed: 1000frames/15seconds = 66frames/second
 # 2851200 frames / 12 hours
+# 1426100 frames / 6 hours
+# 713050 frames / 3 hours
+# 4000 frames / minute
 
 # run_time in global frames
 RUN_TIME = 2851200
 # THREADS = 8
-THREADS = 2
+THREADS = 1
 OPTIMIZERS = 1
 THREAD_DELAY = 0.0001 # thread delay is needed to enable more parallel threads than cpu cores
 
@@ -39,31 +42,31 @@ IMAGE_SIZE = (IMAGE_WIDTH, IMAGE_HEIGHT, IMAGE_STACK)
 NUM_ACTIONS = 5
 DISC_ACTIONS = [[0,1,0],[0,0,0.8],[-1,0,0],[1,0,0],[0,0,0]]
 NONE_STATE = np.zeros(IMAGE_SIZE) #create Nullstate to append when s_ is None
-EARLY_TERMINATION = 15 # score difference between epMax and current score for termination
+EARLY_TERMINATION = 17 # score difference between epMax and current score for termination
 SUMMARY_STEPS = 100
 
 ########################
 # Log & saving #
 ########################
 
-DATA_FOLDER = "data_ 30_06_19_batch16_et15_clip25"
+DATA_FOLDER = "data_31_06_19_s_bugfix_th1_wRclip_et5_gClip10"
 
 LOG_FILE        =  DATA_FOLDER + "/tmp/a3c_log"
 CHECKPOINT_DIR  =  DATA_FOLDER + "/checkpoints"
 SAVE_FILE = DATA_FOLDER + "/carRacing_savedata"
 
-MIN_SAVE_REWARD = 60
+MIN_SAVE_REWARD = 100
 SAVE_FRAMES = 50000
 REPLAY_MODE = False
 
-MIN_BATCH = 16
+MIN_BATCH = 64
 LEARNING_RATE = 1e-4
 
 #RMSP Parameters
 class RMSP:
-    ALPHA       =  0.99      # decay parameter for RMSProp
-    EPSILON     =  0.1       # epsilon parameter for RMSProp
-    GRADIENT_NORM_CLIP  =  25.0      # Gradient clipping norm
+    ALPHA       =  0.9      # decay parameter for RMSProp
+    EPSILON     =  1e-10      # epsilon parameter for RMSProp
+    GRADIENT_NORM_CLIP  =  10.0      # Gradient clipping norm
 
 
 class ADAM:

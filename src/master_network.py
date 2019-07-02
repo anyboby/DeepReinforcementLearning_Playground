@@ -101,7 +101,7 @@ class MasterNetwork:
             s_t = tf.placeholder(tf.float32, shape=(None, Constants.IMAGE_SIZE[0], Constants.IMAGE_SIZE[1], Constants.IMAGE_SIZE[2]), name = "state")
             a_t = tf.placeholder(tf.float32, shape=(None, Constants.NUM_ACTIONS), name="actions")
             r_t = tf.placeholder(tf.float32, shape=(None, 1), name = "rewards")  #discounted n-step reward
-            
+            lr_t = tf.placeholder(tf.float32, shape= [], name = "learning_rate")
             # retrieve policy and value functions from Master Model
             pi,v = model(s_t)
             
@@ -146,8 +146,7 @@ class MasterNetwork:
             
             # since Q(s,a) is approximated by n-step return reward r_t, the value error equals
             # the advantage function now!
-            #loss_value = Constants.LOSS_V * tf.square(advantage) 
-            loss_value = Constants.LOSS_V * tf.square(advantage)
+            loss_value = Constants.LOSS_V * tf.nn.l2_loss(advantage)
 
             tf_vloss_summary = tf.summary.scalar("value_loss", l2_norm(loss_value))
             summaries.append(tf_vloss_summary)
@@ -166,18 +165,25 @@ class MasterNetwork:
             
         with tf.name_scope("train"):
 
-
-            self.lr = tf.train.polynomial_decay(Constants.LEARNING_RATE, self.data.global_t, Constants.RUN_TIME, 0.000001, 1.0)
-            tf_lr_summary = tf.summary.scalar("learnrate", self.lr)
+            ################
+            ## linear lr decay, doesnt seem to work though 
+            ################
+            lr = tf.train.polynomial_decay(Constants.LEARNING_RATE, self.data.global_t, Constants.RUN_TIME, 0.000001, 1.0)
+            tf_lr_summary = tf.summary.scalar("learnrate", lr)
             summaries.append(tf_lr_summary)
 
             #optimizer = tf.train.RMSPropOptimizer(self.lr,
             #                                        epsilon=Constants.RMSP.EPSILON,
             #                                        decay=Constants.RMSP.ALPHA)
 
-            optimizer = tf.train.RMSPropOptimizer(self.lr,
+            optimizer = tf.train.RMSPropOptimizer(lr,
                                                     epsilon=Constants.RMSP.EPSILON,
-                                                    decay=0)
+                                                    decay=0.0)
+
+            #tf_lr_summary = tf.summary.scalar("learning_rate", lr_t)
+            #summaries.append(tf_lr_summary)
+
+
             #split training op def in two steps to get gradients for tensorboard
             grads_and_vars = optimizer.compute_gradients(loss_total)
             clipped_grads_and_vars = [(tf.clip_by_norm(grad, Constants.RMSP.GRADIENT_NORM_CLIP), var) for grad, var in grads_and_vars]
@@ -190,7 +196,7 @@ class MasterNetwork:
                     tf_weightnorm_summary = tf.summary.scalar(variable.name + "_l2", l2_norm(variable))
                     summaries = summaries + [tf_gradnorm_summary, tf_weightnorm_summary]
 
-        return s_t, a_t, r_t, minimize, summaries
+        return s_t, a_t, r_t, lr_t, minimize, summaries
 
     """
     optimize preprocesses data and runs minimize() of MasterNetwork. optimize is called by 
@@ -239,30 +245,25 @@ class MasterNetwork:
 
 
         # retrieve placeholders including summary ops
-        s_t, a_t, r_t, minimize, summaries = self.graph
+        s_t, a_t, r_t, lr_t, minimize, summaries = self.graph
 
+
+            ################
+            ## linear lr decay, doesnt seem to work though 
+            ################
+        #lr = tf.train.polynomial_decay(Constants.LEARNING_RATE, self.data.global_t, Constants.RUN_TIME, 0.000001, 1.0)
+        lr = Constants.LEARNING_RATE - (Constants.LEARNING_RATE-0.0000001)*self.data.global_t/Constants.RUN_TIME
+        
         if writesummaries:
             
-            try:
-                #run minimization + tb summaries
-                results = self.session.run([minimize] + summaries, feed_dict={s_t: s, a_t:a, r_t:r})
+            #run minimization + tb summaries
+            results = self.session.run([minimize] + summaries, feed_dict={s_t: s, a_t:a, r_t:r, lr_t:lr})
 
-                #leave out result from minimize run
-                self.summary_strs = self.summary_strs + results[1:]
-            except:
-                print ("s_t: " + str(s))
-                print ("a_t: " + str(a))
-                print ("r_t: " + str(r))
+            #leave out result from minimize run
+            self.summary_strs = self.summary_strs + results[1:]
 
         else: 
-            #print (r)
-            #run minimization only
-            try:
-                self.session.run(minimize, feed_dict={s_t: s, a_t:a, r_t:r})
-            except:
-                print ("s_t: " + str(s))
-                print ("a_t: " + str(a))
-                print ("r_t: " + str(r))
+            self.session.run(minimize, feed_dict={s_t: s, a_t:a, r_t:r, lr_t:lr})
         return True
 
 

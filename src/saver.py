@@ -102,3 +102,4 @@ class Saver:
                 #print("Saving checkpoint as score crossed threshold of:", Constants.MIN_SAVE_REWARD)
                 self.save(session)
                 self.lastSaveTime = time.time()
+                self.lastSaveScore = abs(self.data.scores[-1]["reward"])

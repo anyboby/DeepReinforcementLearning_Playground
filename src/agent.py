@@ -93,14 +93,8 @@ class Agent:
             while len(self.memory) > 0:
                 n = len(self.memory)
                 s, a, R, s_ = get_sample(self.memory, n)
-                # if n<3:
-                #    print("n is 0, s has the shape: {}".format(s))
-                #    print("n is 0, s_ has the shape: {}".format(s_))
-
-                if s is  not None:
-                    self.master_network.train_push(s, a, R, s_)
-                else: 
-                    print ("s is none for some reason!!!")
+                
+                self.master_network.train_push(s, a, R, s_)
 
                 #@MO DIEHIER NOCH CHECKEN
                 self.R = (self.R - self.memory[0][2]) / GAMMA
@@ -109,12 +103,6 @@ class Agent:
         
         if len(self.memory) >= Constants.N_STEP_RETURN:
             s, a, R, s_ = get_sample(self.memory, Constants.N_STEP_RETURN)
-
-            if R>30.13 or R<-0.78:
-
-                print("##################### Numerical Instability! #############################")
-                print (str(R))
-                print("##################### Numerical Instability! #############################")
 
             self.master_network.train_push(s, a, R, s_)
         

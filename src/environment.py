@@ -106,40 +106,38 @@ class Environment(threading.Thread):
             else:    #last step of episode is finished, no next state
                 s_ = None
 
-            s = s_  #assume new state
-            R += r  #add reward for the last step to total Rewards
-
-
-            #clip rewards and send to agent
-            #let agent put data in memory and possibly trigger optimization
-            self.agent.train(s, a, np.clip(r, -1, 1), s_,) 
-
-            if s_ is None:  print ("none")
-            #skip frames for speed
-            if self.cvshow and self.local_t%3==0 and s_ is not None:
-                cv2.imshow("image", s_)
-                cv2.waitKey(1)
-            
-
-
-            if not done:
-                #tensorboard epxects batchsize in first dimension, so add additional dim
-                singleState = np.expand_dims(s, axis=0)
-
-
-            self.local_t += 1
-
             #######   adding in early termination  ############
+            R += r  #add reward for the last step to total Rewards
             if R > self.maxEpReward:
                 self.maxEpReward  = R
 
             if self.maxEpReward - R > Constants.EARLY_TERMINATION:
                 done = True
+                s_ = None
+                #r = -100
+            ####################################################
+
+            #clip rewards and send to agent
+            #let agent put data in memory and possibly trigger optimization
+            r_cl = np.clip(r, -1, 1)
+
+            self.agent.train(s, a, r_cl, s_,) 
+
+            #skip frames for speed
+            if self.cvshow:
+                cv2.imshow("image", s)
+                cv2.waitKey(1)
+
+            if not done:
+                #tensorboard epxects batchsize in first dimension, so add additional dim
+                singleState = np.expand_dims(s, axis=0)
+
+            s = s_  #assume new state
+            self.local_t += 1
 
             if done or self.stop_signal:
                 self._record_score(self.agent.master_network.session, self.summary_writer, self.summary_op, self.score_input, R, None, singleState, self.weight_phs, self.data.global_t, pi)
                 Environment.global_episodes += 1
-                #print("score={}".format(R))
                 break
 
         print ("_________________________")
@@ -180,9 +178,9 @@ class Environment(threading.Thread):
 
         if score > Environment.maxScore:
             Environment.maxScore = score
-            self.saver.save()
-        elif score > Constants.MIN_SAVE_REWARD:
-            self.data.requestSave()
+            self.saver.save(master_network.session)
+        #elif score > Constants.MIN_SAVE_REWARD:
+        #    self.data.requestSave()
 
     #####################
     ### Preprocessing ###
