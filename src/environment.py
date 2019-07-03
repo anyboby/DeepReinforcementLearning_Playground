@@ -119,14 +119,14 @@ class Environment(threading.Thread):
 
             #clip rewards and send to agent
             #let agent put data in memory and possibly trigger optimization
-            r_cl = np.clip(r, -1, 1)
+            #r_cl = np.clip(r, -1, 1)
 
-            self.agent.train(s, a, r_cl, s_,) 
+            self.agent.train(s, a, r, s_,) 
 
             #skip frames for speed
             if self.cvshow:
                 cv2.imshow("image", s)
-                cv2.waitKey(1)
+                cv2.waitKey(Constants.WAITKEY)
 
             if not done:
                 #tensorboard epxects batchsize in first dimension, so add additional dim
@@ -193,6 +193,8 @@ class Environment(threading.Thread):
         img = self._rgb2gray(img, True) # squash to 96 x 96
         #img = self._zero_center(img)
         img = self._crop(img)
+        #img = cv2.resize(img, (40,40))
+        #ret,thresh = cv2.threshold(img,0,255,cv2.THRESH_BINARY)
         return img
 
 

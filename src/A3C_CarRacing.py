@@ -72,6 +72,11 @@ if not Constants.REPLAY_MODE:
     
 master_network.init_tf_summary()
 
+######## plot frames datas ########
+#plt.plot(data.frames_t,data.v)
+#plt.show()
+###################################
+
 print("Training finished")
 saver.save(master_network.session)
 

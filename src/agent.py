@@ -4,6 +4,7 @@ import threading
 
 from master_network import MasterNetwork
 
+
 import constants as Constants
 
 """
@@ -18,7 +19,6 @@ class Agent:
         self.eps_end = eps_end
         self.eps_steps = eps_steps
         self.num_actions = num_actions
-        
         
         self.memory = []  #used for n step return
         self.R = 0.
@@ -55,6 +55,17 @@ class Agent:
         else:
             s = np.array([s])
             pi = self.master_network.predict_p(s)[0]
+
+            ###### for step value, pi vizualization ##########
+            #self.master_network.data.v.append(self.master_network.predict_v(s)[0])
+            #self.master_network.data.pi.append(pi)
+            #self.master_network.data.frames_t.append(Agent.frames)
+            #print ("frame: " + str(Agent.frames))
+            #print ("value: " + str(self.master_network.data.v[-1]))
+            #print ("pi: " + str(pi))
+            ###################################################
+
+
 
             #choose action with prob distribution of pi
             a = np.random.choice(range(len(pi)), p=pi)

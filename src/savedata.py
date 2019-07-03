@@ -7,6 +7,11 @@ class SaveData:
 		self.wall_t = wall_t
 		self.scores = scores
 
+		########for frames plot v ###########
+		self.v = []
+		self.pi = []
+		self.frames_t = []
+
 		self.saveRequested = False
 
 	def requestSave(self):

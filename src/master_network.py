@@ -63,7 +63,7 @@ class MasterNetwork:
 
         x = Flatten()(x)                      
     
-        x = Dense (256, activation="relu")(x) 
+        x = Dense (Constants.FEATURE_LAYER, activation="relu")(x) 
                                     
         #l_dense = Dense (16, activation="relu")(x)
                                                     
