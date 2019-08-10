@@ -42,7 +42,7 @@ IMAGE_SIZE = (IMAGE_WIDTH, IMAGE_HEIGHT, IMAGE_STACK)
 NUM_ACTIONS = 5
 DISC_ACTIONS = [[0,1,0],[0,0,0.8],[-1,0,0],[1,0,0],[0,0,0]]
 NONE_STATE = np.zeros(IMAGE_SIZE) #create Nullstate to append when s_ is None
-EARLY_TERMINATION = 1000 # score difference between epMax and current score for termination
+EARLY_TERMINATION = 15 # score difference between epMax and current score for termination
 SUMMARY_STEPS = 100
 
 ########################
