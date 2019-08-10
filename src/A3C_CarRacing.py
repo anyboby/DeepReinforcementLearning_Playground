@@ -44,7 +44,7 @@ if not Constants.REPLAY_MODE:
     #initialize threads
     envs = [Environment(gym.make(Constants.ENV), Agent(master_network, Constants.EPS_START, Constants.EPS_STOP, Constants.EPS_STEPS), summary, saver) for i in range(Constants.THREADS-1)]
     #create cvshow thread
-    envs.append(Environment(gym.make(Constants.ENV), Agent(master_network, Constants.EPS_START, Constants.EPS_STOP, Constants.EPS_STEPS), summary, saver, cvshow=True))
+    envs.append(Environment(gym.make(Constants.ENV), Agent(master_network, Constants.EPS_START, Constants.EPS_STOP, Constants.EPS_STEPS), summary, saver,render=True, cvshow=True))
 
     opts = [Optimizer(master_network) for i in range(Constants.OPTIMIZERS)]
 

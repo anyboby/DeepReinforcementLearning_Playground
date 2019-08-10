@@ -19,7 +19,7 @@ ENV = "CarRacing-v0"
 # run_time in global frames
 RUN_TIME = 2851200
 # THREADS = 8
-THREADS =3
+THREADS =1
 OPTIMIZERS = 1
 THREAD_DELAY = 0.0001 # thread delay is needed to enable more parallel threads than cpu cores
 
